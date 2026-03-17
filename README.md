@@ -20,7 +20,7 @@ Instead of making multiple API calls and processing large JSON responses, this s
 npx skills add Ahrentlov/apple-docs-skill --skill apple-developer-docs
 ```
 
-Or download the `.zip` from [Releases](https://github.com/Ahrentlov/apple-developer-docs-skill/releases) and place the `apple-developer-docs/` folder in your agent's skills directory.
+Or download the `.zip` from [Releases](https://github.com/Ahrentlov/apple-docs-skill/releases) and place the `apple-developer-docs/` folder in your agent's skills directory.
 
 ## Usage
 
