@@ -10,7 +10,7 @@ import urllib.parse
 from typing import Dict
 
 
-def search_wwdc_notes(query: str) -> Dict:
+def search_wwdc_notes_urls(query: str) -> Dict:
     """
     Generate search URLs for WWDC sessions.
 

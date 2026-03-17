@@ -34,7 +34,7 @@ Output is JSON with `success`, `result`, `stdout`, `error`, and `execution_time_
 
 ### Apple Documentation
 - `fetch_documentation(url)` - Fetch and parse Apple Developer documentation
-- `search_apple_online(query, platform=None)` - Generate search URLs
+- `search_apple_online_urls(query, platform=None)` - Generate search URLs
 - `get_framework_info(framework)` - Get framework documentation URL
 
 ### Swift Evolution
@@ -42,13 +42,13 @@ Output is JSON with `success`, `result`, `stdout`, `error`, and `execution_time_
 - `get_proposal(se_number)` - Get details of a specific proposal (SE-0413, 413, etc.)
 
 ### Swift Repositories
-- `search_swift_repos(query)` - Search Apple/SwiftLang GitHub repos
+- `search_swift_repos_urls(query)` - Search Apple/SwiftLang GitHub repos
 - `fetch_github_file(url)` - Fetch source code from GitHub (apple/swiftlang orgs only)
 
 ### WWDC & Design
-- `search_wwdc_notes(query)` - Search WWDC sessions
+- `search_wwdc_notes_urls(query)` - Search WWDC sessions
 - `get_wwdc_session(session_id)` - Get session URLs (format: wwdc2023-10154)
-- `search_hig(query, platform=None)` - Search Human Interface Guidelines
+- `search_hig_urls(query, platform=None)` - Search Human Interface Guidelines
 - `list_hig_platforms()` - List all HIG platforms
 
 For full API signatures and return types, consult `references/api-reference.md`.
@@ -93,7 +93,7 @@ result = {
 ```bash
 python3 {{SKILL_PATH}}/scripts/run.py "
 proposals = search_proposals('Observation')
-wwdc = search_wwdc_notes('observation framework')
+wwdc = search_wwdc_notes_urls('observation framework')
 result = {
     'proposals': [p['title'] for p in proposals.get('proposals', [])[:3]],
     'wwdc_search': wwdc.get('search_urls', {})

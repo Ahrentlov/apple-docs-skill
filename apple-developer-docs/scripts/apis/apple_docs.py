@@ -114,7 +114,7 @@ def fetch_documentation(url: str) -> Dict:
         return {"error": str(e), "url": url}
 
 
-def search_apple_online(query: str, platform: Optional[str] = None) -> Dict:
+def search_apple_online_urls(query: str, platform: Optional[str] = None) -> Dict:
     """Generate search URLs for Apple documentation."""
     encoded_query = urllib.parse.quote(query)
     result = {

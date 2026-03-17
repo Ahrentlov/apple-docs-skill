@@ -19,15 +19,15 @@ The sandbox provides:
 
 Available APIs in the sandbox:
 - fetch_documentation(url) - Apple Developer docs
-- search_apple_online(query, platform?) - Search Apple docs
+- search_apple_online_urls(query, platform?) - Apple docs search URLs
 - get_framework_info(framework) - Framework documentation URLs
 - search_proposals(feature) - Swift Evolution proposals
 - get_proposal(se_number) - Specific proposal details
-- search_swift_repos(query) - Search Apple/SwiftLang repos
+- search_swift_repos_urls(query) - Apple/SwiftLang GitHub search URLs
 - fetch_github_file(url) - Fetch file from GitHub
-- search_wwdc_notes(query) - WWDC session search
+- search_wwdc_notes_urls(query) - WWDC session search URLs
 - get_wwdc_session(session_id) - Session URLs
-- search_hig(query, platform?) - Human Interface Guidelines
+- search_hig_urls(query, platform?) - HIG search URLs
 - list_hig_platforms() - List HIG platforms
 """
 
@@ -41,11 +41,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from sandbox import SandboxExecutor
 from apis import (
-    fetch_documentation, search_apple_online, get_framework_info,
+    fetch_documentation, search_apple_online_urls, get_framework_info,
     search_proposals, get_proposal,
-    search_swift_repos, fetch_github_file,
-    search_wwdc_notes, get_wwdc_session,
-    search_hig, list_hig_platforms,
+    search_swift_repos_urls, fetch_github_file,
+    search_wwdc_notes_urls, get_wwdc_session,
+    search_hig_urls, list_hig_platforms,
 )
 
 
@@ -54,7 +54,7 @@ def create_api_handlers():
     return {
         # Apple Documentation
         "fetch_documentation": fetch_documentation,
-        "search_apple_online": lambda query, platform=None: search_apple_online(query, platform),
+        "search_apple_online_urls": lambda query, platform=None: search_apple_online_urls(query, platform),
         "get_framework_info": get_framework_info,
 
         # Swift Evolution
@@ -62,15 +62,15 @@ def create_api_handlers():
         "get_proposal": get_proposal,
 
         # Swift Repos
-        "search_swift_repos": search_swift_repos,
+        "search_swift_repos_urls": search_swift_repos_urls,
         "fetch_github_file": fetch_github_file,
 
         # WWDC Notes
-        "search_wwdc_notes": search_wwdc_notes,
+        "search_wwdc_notes_urls": search_wwdc_notes_urls,
         "get_wwdc_session": get_wwdc_session,
 
         # Human Interface Guidelines
-        "search_hig": lambda query, platform=None: search_hig(query, platform),
+        "search_hig_urls": lambda query, platform=None: search_hig_urls(query, platform),
         "list_hig_platforms": list_hig_platforms,
     }
 

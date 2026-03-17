@@ -59,6 +59,10 @@ apple-developer-docs/
     └── security.md       # Sandbox security model
 ```
 
+## Known Limitations
+
+Requires Python 3.10+ (uses `match`/`case`) and `RLIMIT_AS` memory limits may not apply on all platforms.
+
 ## License
 
 MIT

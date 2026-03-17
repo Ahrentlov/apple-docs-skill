@@ -35,9 +35,9 @@ result = {"title": doc["title"], "signature": doc.get("declaration")}
 
 ---
 
-### search_apple_online(query: str, platform: str = None) -> Dict
+### search_apple_online_urls(query: str, platform: str = None) -> Dict
 
-Search Apple's online documentation.
+Generate search URLs for Apple documentation.
 
 **Parameters:**
 - `query`: Search term
@@ -99,7 +99,12 @@ Search 500+ Swift Evolution proposals.
             "relevance_score": int
         }
     ],
-    "available_versions": list[str]
+    "available_versions": list[str],
+    "deep_search": {             # Only present when fewer than 3 results
+        "reason": str,
+        "suggestion": str,
+        "github_url": str
+    }
 }
 ```
 
@@ -138,9 +143,9 @@ Get details of a specific proposal.
 
 ## Swift Repositories
 
-### search_swift_repos(query: str) -> Dict
+### search_swift_repos_urls(query: str) -> Dict
 
-Search Apple and SwiftLang GitHub repositories.
+Generate search URLs for Apple and SwiftLang GitHub repositories.
 
 **Parameters:**
 - `query`: Code or concept to search
@@ -189,9 +194,9 @@ Fetch source code from Apple/SwiftLang GitHub.
 
 ## WWDC Notes
 
-### search_wwdc_notes(query: str) -> Dict
+### search_wwdc_notes_urls(query: str) -> Dict
 
-Search WWDC session notes.
+Generate search URLs for WWDC session notes.
 
 **Parameters:**
 - `query`: Topic to search
@@ -233,9 +238,9 @@ Get WWDC session URLs.
 
 ## Human Interface Guidelines
 
-### search_hig(query: str, platform: str = None) -> Dict
+### search_hig_urls(query: str, platform: str = None) -> Dict
 
-Search Apple's Human Interface Guidelines.
+Generate search URLs for Apple's Human Interface Guidelines.
 
 **Parameters:**
 - `query`: Design topic
@@ -249,14 +254,14 @@ Search Apple's Human Interface Guidelines.
     "base_url": str,
     "search_url": str,
     "direct_link": str,
-    "platform_url": str,
-    "platform_search": str
+    "platform_url": str,       # Only present when platform is specified
+    "platform_search": str     # Only present when platform is specified
 }
 ```
 
 ---
 
-### list_hig_platforms() -> Dict
+### list_hig_platforms() -> List[Dict]
 
 List HIG platforms.
 
@@ -265,7 +270,7 @@ List HIG platforms.
 [
     {
         "platform": str,    # e.g., "ios"
-        "name": str,        # e.g., "iOS" or "visionOS"
+        "name": str,        # e.g., "iOS", "macOS", "visionOS"
         "url": str          # HIG platform URL
     }
 ]

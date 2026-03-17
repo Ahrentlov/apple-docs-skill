@@ -60,7 +60,7 @@ class SwiftReposAPI:
 _api = SwiftReposAPI()
 
 
-def search_swift_repos(query: str) -> Dict:
+def search_swift_repos_urls(query: str) -> Dict:
     """
     Search across all Apple and SwiftLang Swift repositories.
 

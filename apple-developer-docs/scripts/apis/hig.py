@@ -14,7 +14,7 @@ PLATFORMS = ["ios", "macos", "tvos", "watchos", "visionos"]
 BASE_URL = "https://developer.apple.com/design/human-interface-guidelines"
 
 
-def search_hig(query: str, platform: Optional[str] = None) -> Dict:
+def search_hig_urls(query: str, platform: Optional[str] = None) -> Dict:
     """
     Search Human Interface Guidelines by topic or keyword.
 
@@ -46,6 +46,15 @@ def search_hig(query: str, platform: Optional[str] = None) -> Dict:
     return results
 
 
+PLATFORM_NAMES = {
+    "ios": "iOS",
+    "macos": "macOS",
+    "tvos": "tvOS",
+    "watchos": "watchOS",
+    "visionos": "visionOS",
+}
+
+
 def list_hig_platforms() -> List[Dict]:
     """
     List all supported Apple platforms with Human Interface Guidelines links.
@@ -56,7 +65,7 @@ def list_hig_platforms() -> List[Dict]:
     return [
         {
             "platform": platform,
-            "name": platform.upper() if platform != "visionos" else "visionOS",
+            "name": PLATFORM_NAMES.get(platform, platform),
             "url": f"{BASE_URL}/platforms/{platform}"
         }
         for platform in PLATFORMS

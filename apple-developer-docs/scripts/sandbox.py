@@ -126,33 +126,33 @@ def get_proposal(se_number):
     return _make_api_call("get_proposal", se_number)
 
 
-def search_apple_online(query, platform=None):
-    """Search Apple's online documentation."""
-    return _make_api_call("search_apple_online", query, platform)
+def search_apple_online_urls(query, platform=None):
+    """Generate search URLs for Apple documentation."""
+    return _make_api_call("search_apple_online_urls", query, platform)
 
 def get_framework_info(framework):
     """Get documentation URL for a framework."""
     return _make_api_call("get_framework_info", framework)
 
-def search_swift_repos(query):
-    """Search across all Swift repositories."""
-    return _make_api_call("search_swift_repos", query)
+def search_swift_repos_urls(query):
+    """Generate search URLs for Apple/SwiftLang GitHub repos."""
+    return _make_api_call("search_swift_repos_urls", query)
 
 def fetch_github_file(url):
     """Fetch source code from GitHub."""
     return _make_api_call("fetch_github_file", url)
 
-def search_wwdc_notes(query):
-    """Search WWDC session notes."""
-    return _make_api_call("search_wwdc_notes", query)
+def search_wwdc_notes_urls(query):
+    """Generate search URLs for WWDC sessions."""
+    return _make_api_call("search_wwdc_notes_urls", query)
 
 def get_wwdc_session(session_id):
     """Get WWDC session URLs."""
     return _make_api_call("get_wwdc_session", session_id)
 
-def search_hig(query, platform=None):
-    """Search Human Interface Guidelines."""
-    return _make_api_call("search_hig", query, platform)
+def search_hig_urls(query, platform=None):
+    """Generate search URLs for Human Interface Guidelines."""
+    return _make_api_call("search_hig_urls", query, platform)
 
 def list_hig_platforms():
     """List all HIG platforms."""
@@ -164,13 +164,13 @@ namespace['fetch_documentation'] = fetch_documentation
 namespace['search_proposals'] = search_proposals
 namespace['get_proposal'] = get_proposal
 
-namespace['search_apple_online'] = search_apple_online
+namespace['search_apple_online_urls'] = search_apple_online_urls
 namespace['get_framework_info'] = get_framework_info
-namespace['search_swift_repos'] = search_swift_repos
+namespace['search_swift_repos_urls'] = search_swift_repos_urls
 namespace['fetch_github_file'] = fetch_github_file
-namespace['search_wwdc_notes'] = search_wwdc_notes
+namespace['search_wwdc_notes_urls'] = search_wwdc_notes_urls
 namespace['get_wwdc_session'] = get_wwdc_session
-namespace['search_hig'] = search_hig
+namespace['search_hig_urls'] = search_hig_urls
 namespace['list_hig_platforms'] = list_hig_platforms
 
 # User code execution
