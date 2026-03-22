@@ -1,14 +1,15 @@
 ---
 name: apple-developer-docs
 description: >-
-  Query and filter Apple developer documentation via sandboxed Python code execution.
-  Use when user asks about Apple APIs, SwiftUI, UIKit, or any Apple framework documentation,
-  Swift Evolution proposals, WWDC sessions, Human Interface Guidelines,
-  or needs to fetch Swift source code from Apple's GitHub repositories.
-  Use for queries like "look up the SwiftUI View protocol", "find Swift Evolution proposals
-  about async", "search WWDC sessions on concurrency", "check the HIG for navigation patterns",
-  or "fetch the Swift source for Task". Do NOT use for general Swift programming questions
-  that don't require documentation lookup.
+  Execute Python code to query and filter Apple developer documentation
+  (SwiftUI, UIKit, all frameworks), Swift Evolution proposals, WWDC session notes,
+  Human Interface Guidelines, and Apple/SwiftLang GitHub source code.
+  TRIGGER when: user asks about Apple API docs, Swift proposals (SE-xxxx),
+  WWDC sessions, HIG design patterns, or wants to read Swift source from GitHub.
+  Examples: "look up SwiftUI View", "find async proposals", "what changed in Swift 6",
+  "search WWDC for concurrency", "check HIG navigation patterns",
+  "fetch the source for Task.swift".
+  Do NOT trigger for general Swift programming questions without documentation lookup.
 license: MIT
 allowed-tools: "Bash(python3:*)"
 metadata:
