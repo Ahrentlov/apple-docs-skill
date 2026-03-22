@@ -71,18 +71,51 @@ class AppleDocsAPI:
             item.get("text", "") for item in items if item.get("type") == "text"
         )
 
+    def _extract_symbols(self, data: Dict) -> list:
+        """Extract child symbols from topicSections and references."""
+        references = data.get("references", {})
+        symbols = []
+        for section in data.get("topicSections", []):
+            group = section.get("title", "")
+            for ref_id in section.get("identifiers", []):
+                ref = references.get(ref_id, {})
+                if ref.get("kind") != "symbol":
+                    continue
+                fragments = ref.get("fragments", [])
+                declaration = "".join(f.get("text", "") for f in fragments)
+                abstract_items = ref.get("abstract", [])
+                abstract = "".join(
+                    item.get("text", "") for item in abstract_items
+                    if item.get("type") == "text"
+                )
+                symbols.append({
+                    "name": ref.get("title", ""),
+                    "declaration": declaration,
+                    "abstract": abstract,
+                    "group": group,
+                    "role": ref.get("role", ""),
+                    "url": f"https://developer.apple.com{ref.get('url', '')}",
+                })
+        return symbols
+
     def _parse_documentation_json(self, data: Dict) -> Dict:
         """Parse Apple's documentation JSON format."""
         sections = data.get("primaryContentSections", [])
 
-        return {
+        result = {
             "title": data.get("metadata", {}).get("title", "Unknown"),
             "abstract": self._extract_abstract(data.get("abstract", [])),
             "declaration": self._extract_declaration(sections),
             "discussion": self._extract_discussion(sections),
             "parameters": [],
-            "returns": ""
+            "returns": "",
         }
+
+        symbols = self._extract_symbols(data)
+        if symbols:
+            result["symbols"] = symbols
+
+        return result
 
 
 _api = AppleDocsAPI()
