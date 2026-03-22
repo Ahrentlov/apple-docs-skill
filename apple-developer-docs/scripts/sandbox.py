@@ -235,14 +235,13 @@ sys.stdout.flush()
         self.validator = CodeValidator()
         self.api_handlers = api_handlers or {}
 
-    def execute(self, code: str, api_handlers: Optional[Dict[str, Callable]] = None, skip_validation: bool = False) -> ExecutionResult:
+    def execute(self, code: str, api_handlers: Optional[Dict[str, Callable]] = None) -> ExecutionResult:
         """
         Execute code in the sandbox with dynamic API access.
 
         Args:
             code: Python code to execute
             api_handlers: Dict mapping function names to handler callables
-            skip_validation: If True, skip code validation
 
         Returns:
             ExecutionResult with success status, result, and any errors
@@ -251,17 +250,16 @@ sys.stdout.flush()
         validation_warnings = []
         handlers = api_handlers or self.api_handlers
 
-        # Step 1: Validate code (unless pre-validated)
-        if not skip_validation:
-            validation = self.validator.validate(code)
-            if not validation.is_safe:
-                return ExecutionResult(
-                    success=False,
-                    error="; ".join(validation.errors),
-                    error_type="ValidationError",
-                    execution_time_ms=int((time.time() - start_time) * 1000)
-                )
-            validation_warnings = validation.warnings
+        # Step 1: Validate code
+        validation = self.validator.validate(code)
+        if not validation.is_safe:
+            return ExecutionResult(
+                success=False,
+                error="; ".join(validation.errors),
+                error_type="ValidationError",
+                execution_time_ms=int((time.time() - start_time) * 1000)
+            )
+        validation_warnings = validation.warnings
 
         # Step 2: Create sandbox script
         try:
@@ -297,8 +295,12 @@ sys.stdout.flush()
 
     def _create_sandbox_script(self, code: str) -> str:
         """Create the sandbox script."""
-        # Escape user code for embedding
+        # Escape user code for safe embedding in exec("""...""").
+        # Backslashes first, then triple quotes, then prevent trailing
+        # quotes from merging with the closing """.
         escaped_code = code.replace('\\', '\\\\').replace('"""', '\\"\\"\\"')
+        while escaped_code.endswith('"') and not escaped_code.endswith('\\"'):
+            escaped_code = escaped_code[:-1] + '\\"'
 
         return self.SANDBOX_TEMPLATE.format(
             timeout=self.timeout,

@@ -97,13 +97,16 @@ def fetch_github_file(url: str) -> Dict:
     Returns:
         Dictionary with file content and metadata, or error
     """
-    # Security: Only allow Apple's official organizations
-    allowed_domains = [
-        f"{domain}/{org}/"
-        for domain in ('github.com', 'raw.githubusercontent.com')
-        for org in _api.ALLOWED_ORGS
-    ]
-    if not any(domain in url for domain in allowed_domains):
+    # Security: Only allow Apple's official organizations via proper URL parsing
+    parsed = urllib.parse.urlparse(url)
+    if parsed.hostname not in ('github.com', 'raw.githubusercontent.com'):
+        return {
+            "error": "Invalid URL",
+            "message": "URL must be from github.com or raw.githubusercontent.com",
+            "suggestion": "Example: https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/Task.swift"
+        }
+    path_parts = parsed.path.strip('/').split('/')
+    if not path_parts or path_parts[0] not in _api.ALLOWED_ORGS:
         return {
             "error": "Invalid URL",
             "message": "URL must be from github.com/apple/ or github.com/swiftlang/ organizations",

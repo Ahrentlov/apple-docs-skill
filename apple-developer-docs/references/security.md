@@ -18,20 +18,13 @@
 
 ## Forbidden Operations
 
-### Blocked Patterns (Regex)
-- `import` - No external modules
-- `__name__`, `__class__` - No dunder attributes
-- `open()` - No file access
-- `exec()`, `eval()`, `compile()` - No dynamic execution
-- `globals()`, `locals()`, `vars()` - No namespace inspection
-- `getattr()`, `setattr()`, `delattr()` - No attribute manipulation
-- `os.`, `sys.`, `subprocess.` - No system access
-
 ### AST Validation
-Code is parsed and validated structurally:
-- Import statements blocked
-- Dangerous function calls blocked
-- Dunder attribute access blocked
+Code is parsed and validated structurally (not via regex, so strings and comments are ignored):
+- Import statements (`import`, `from ... import`)
+- Blocked function calls (`exec`, `eval`, `compile`, `open`, `getattr`, `setattr`, `delattr`, `hasattr`, `globals`, `locals`, `vars`, `dir`, `breakpoint`, `input`, `__import__`)
+- Blocked module access (`os.`, `sys.`, `subprocess.`)
+- Dunder attribute access (`__class__`, `__name__`, `__subclasses__`, etc.)
+- Dunder name references (`__builtins__`, etc.)
 
 ## Resource Limits
 
@@ -81,8 +74,7 @@ True, False, None
 
 ## What Happens on Violation
 
-1. **Regex match:** Immediate rejection with error message
-2. **AST violation:** Rejection with specific error
-3. **Timeout:** Process killed, TimeoutError returned
-4. **Memory exceeded:** Process killed by OS
-5. **No `result` variable:** Warning returned (code runs but result is None)
+1. **AST violation:** Rejection with specific error
+2. **Timeout:** Process killed, TimeoutError returned
+3. **Memory exceeded:** Process killed by OS
+4. **No `result` variable:** Warning returned (code runs but result is None)
