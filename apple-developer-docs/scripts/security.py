@@ -129,6 +129,9 @@ class CodeValidator:
                 case ast.Attribute(attr=attr) if attr.startswith('__') and attr.endswith('__'):
                     errors.append(f"Dunder attribute access '{attr}' is not allowed")
 
+                case ast.Name(id=name) if name in self.BLOCKED_FUNCTIONS:
+                    errors.append(f"Reference to '{name}' is not allowed")
+
                 case ast.Name(id=name) if name.startswith('__') and name.endswith('__'):
                     errors.append(f"Dunder name '{name}' is not allowed")
 
