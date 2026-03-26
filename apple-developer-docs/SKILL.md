@@ -14,7 +14,7 @@ license: MIT
 allowed-tools: "Bash(python3:*)"
 metadata:
   author: Patrick Ahrentløv
-  version: 1.0.0
+  version: 1.1.0
 ---
 
 # Apple Developer Docs
