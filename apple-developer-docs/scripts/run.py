@@ -42,7 +42,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from sandbox import SandboxExecutor
 from apis import (
     fetch_documentation, search_apple_online_urls, get_framework_info,
-    search_proposals, get_proposal,
+    search_proposals, get_proposal, search_swift_forums_urls, search_swift_forums,
     search_swift_repos_urls, fetch_github_file,
     search_wwdc_notes_urls, get_wwdc_session,
     search_hig_urls, list_hig_platforms,
@@ -54,12 +54,14 @@ def create_api_handlers():
     return {
         # Apple Documentation
         "fetch_documentation": fetch_documentation,
-        "search_apple_online_urls": lambda query, platform=None: search_apple_online_urls(query, platform),
+        "search_apple_online_urls": search_apple_online_urls,
         "get_framework_info": get_framework_info,
 
-        # Swift Evolution
+        # Swift Evolution & Forums
         "search_proposals": search_proposals,
         "get_proposal": get_proposal,
+        "search_swift_forums_urls": search_swift_forums_urls,
+        "search_swift_forums": search_swift_forums,
 
         # Swift Repos
         "search_swift_repos_urls": search_swift_repos_urls,
@@ -70,7 +72,7 @@ def create_api_handlers():
         "get_wwdc_session": get_wwdc_session,
 
         # Human Interface Guidelines
-        "search_hig_urls": lambda query, platform=None: search_hig_urls(query, platform),
+        "search_hig_urls": search_hig_urls,
         "list_hig_platforms": list_hig_platforms,
     }
 

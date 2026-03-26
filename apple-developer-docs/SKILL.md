@@ -2,13 +2,13 @@
 name: apple-developer-docs
 description: >-
   Execute Python code to query and filter Apple developer documentation
-  (SwiftUI, UIKit, all frameworks), Swift Evolution proposals, WWDC session notes,
-  Human Interface Guidelines, and Apple/SwiftLang GitHub source code.
+  (SwiftUI, UIKit, all frameworks), Swift Evolution proposals, Swift Forums discussions,
+  WWDC session notes, Human Interface Guidelines, and Apple/SwiftLang GitHub source code.
   TRIGGER when: user asks about Apple API docs, Swift proposals (SE-xxxx),
-  WWDC sessions, HIG design patterns, or wants to read Swift source from GitHub.
+  Swift Forums discussions, WWDC sessions, HIG design patterns, or wants to read Swift source from GitHub.
   Examples: "look up SwiftUI View", "find async proposals", "what changed in Swift 6",
   "search WWDC for concurrency", "check HIG navigation patterns",
-  "fetch the source for Task.swift".
+  "fetch the source for Task.swift", "search Swift Forums for ownership".
   Do NOT trigger for general Swift programming questions without documentation lookup.
 license: MIT
 allowed-tools: "Bash(python3:*)"
@@ -38,9 +38,11 @@ Output is JSON with `success`, `result`, `stdout`, `error`, and `execution_time_
 - `search_apple_online_urls(query, platform=None)` - Generate search URLs
 - `get_framework_info(framework)` - Get framework documentation URL
 
-### Swift Evolution
+### Swift Evolution & Forums
 - `search_proposals(feature)` - Search proposals by keyword, version, or status
 - `get_proposal(se_number)` - Get details of a specific proposal (SE-0413, 413, etc.)
+- `search_swift_forums_urls(query, category=None)` - Search Swift Forums (returns URLs only)
+- `search_swift_forums(query, category=None)` - Search Swift Forums (returns topics, posts, blurbs)
 
 ### Swift Repositories
 - `search_swift_repos_urls(query)` - Search Apple/SwiftLang GitHub repos

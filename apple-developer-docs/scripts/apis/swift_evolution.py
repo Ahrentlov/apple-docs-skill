@@ -2,8 +2,9 @@
 Swift Evolution API
 ====================
 
-Standalone implementation for searching and retrieving Swift Evolution proposals.
-Uses swift.org's official JSON feed - no authentication required.
+Standalone implementation for searching and retrieving Swift Evolution proposals
+and Swift Forums discussions. Uses swift.org's official JSON feed and Discourse
+search - no authentication required.
 """
 
 import re
@@ -178,5 +179,106 @@ def get_proposal(se_number: str) -> Dict:
         'authors': [a.get('name', 'Unknown') for a in authors],
         'github_url': f"{_api.GITHUB_WEB_BASE}/blob/main/proposals/{proposal.get('link', '')}",
         'raw_url': f"{_api.GITHUB_RAW_BASE}/{proposal.get('link', '')}",
-        'swift_org_url': f'https://www.swift.org/swift-evolution/#?id={proposal.get("id", "")}'
+        'swift_org_url': f'https://www.swift.org/swift-evolution/#?id={proposal.get("id", "")}',
+        'forum_url': f'https://forums.swift.org/search?q={urllib.parse.quote(proposal.get("title", ""))}'
+    }
+
+
+def search_swift_forums_urls(query: str, category: Optional[str] = None) -> Dict:
+    """
+    Generate search URLs for the Swift Forums (forums.swift.org).
+
+    Args:
+        query: Search term (e.g., 'async let', 'ownership', 'SE-0413')
+        category: Optional category filter (evolution, development, using-swift, related-projects)
+
+    Returns:
+        Dictionary with search URLs for different forum sections
+    """
+    encoded_query = urllib.parse.quote(query)
+
+    result = {
+        'query': query,
+        'category': category,
+        'search_urls': {
+            'all': f"https://forums.swift.org/search?q={encoded_query}",
+            'evolution': f"https://forums.swift.org/search?q={encoded_query}%20%23evolution",
+            'development': f"https://forums.swift.org/search?q={encoded_query}%20%23development",
+            'using_swift': f"https://forums.swift.org/search?q={encoded_query}%20%23using-swift",
+        },
+    }
+
+    if category:
+        category_lower = category.lower().replace(' ', '-')
+        result['filtered_url'] = f"https://forums.swift.org/search?q={encoded_query}%20%23{urllib.parse.quote(category_lower)}"
+
+    return result
+
+
+def search_swift_forums(query: str, category: Optional[str] = None) -> Dict:
+    """
+    Search Swift Forums and return structured results.
+
+    Args:
+        query: Search term (e.g., 'async let', 'ownership', 'SE-0413')
+        category: Optional category filter (evolution, development, using-swift, related-projects)
+
+    Returns:
+        Dictionary with topics, posts, and metadata
+    """
+    search_query = urllib.parse.quote(query)
+    if category:
+        search_query += urllib.parse.quote(f" #{category.lower().replace(' ', '-')}")
+
+    api_url = f"https://forums.swift.org/search.json?q={search_query}"
+
+    try:
+        req = urllib.request.Request(
+            api_url,
+            headers={
+                'User-Agent': 'AppleDeveloperDocs/1.0',
+                'Accept': 'application/json'
+            }
+        )
+        with urllib.request.urlopen(req, timeout=15) as response:
+            data = json.loads(response.read().decode('utf-8'))
+    except Exception as e:
+        return {'error': str(e), 'query': query}
+
+    topics_raw = data.get('topics', [])
+    posts_raw = data.get('posts', [])
+
+    topic_map = {t['id']: t for t in topics_raw}
+
+    topics = [{
+        'title': t.get('title', ''),
+        'url': f"https://forums.swift.org/t/{t.get('slug', '')}/{t.get('id', '')}",
+        'posts_count': t.get('posts_count', 0),
+        'reply_count': t.get('reply_count', 0),
+        'created_at': t.get('created_at', '')[:10],
+        'last_posted_at': t.get('last_posted_at', '')[:10],
+        'tags': t.get('tags', []),
+    } for t in topics_raw[:20]]
+
+    posts = []
+    for p in posts_raw[:20]:
+        topic = topic_map.get(p.get('topic_id'))
+        post = {
+            'blurb': p.get('blurb', ''),
+            'username': p.get('username', ''),
+            'like_count': p.get('like_count', 0),
+            'created_at': p.get('created_at', '')[:10],
+        }
+        if topic:
+            post['topic_title'] = topic.get('title', '')
+            post['topic_url'] = f"https://forums.swift.org/t/{topic.get('slug', '')}/{topic['id']}"
+        posts.append(post)
+
+    return {
+        'query': query,
+        'category': category,
+        'total_topics': len(topics_raw),
+        'total_posts': len(posts_raw),
+        'topics': topics,
+        'posts': posts,
     }

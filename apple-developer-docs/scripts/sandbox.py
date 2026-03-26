@@ -125,6 +125,14 @@ def get_proposal(se_number):
     """Get details of a specific Swift Evolution proposal."""
     return _make_api_call("get_proposal", se_number)
 
+def search_swift_forums_urls(query, category=None):
+    """Search Swift Forums - returns URLs only."""
+    return _make_api_call("search_swift_forums_urls", query, category)
+
+def search_swift_forums(query, category=None):
+    """Search Swift Forums - returns topics and posts."""
+    return _make_api_call("search_swift_forums", query, category)
+
 
 def search_apple_online_urls(query, platform=None):
     """Generate search URLs for Apple documentation."""
@@ -163,6 +171,8 @@ namespace = {{'__builtins__': ALLOWED_BUILTINS}}
 namespace['fetch_documentation'] = fetch_documentation
 namespace['search_proposals'] = search_proposals
 namespace['get_proposal'] = get_proposal
+namespace['search_swift_forums_urls'] = search_swift_forums_urls
+namespace['search_swift_forums'] = search_swift_forums
 
 namespace['search_apple_online_urls'] = search_apple_online_urls
 namespace['get_framework_info'] = get_framework_info
