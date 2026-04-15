@@ -14,23 +14,64 @@ Fetch structured documentation from Apple Developer.
 - `url`: Full URL starting with `https://developer.apple.com/documentation/`
 
 **Returns:**
+
+Always present:
 ```python
 {
     "title": str,
     "abstract": str,
     "declaration": str,      # Method signature
-    "discussion": str,       # Detailed explanation
-    "parameters": list,      # Parameter docs
-    "returns": str,          # Return value doc
+    "discussion": str,       # Rendered Discussion body — paragraphs, code blocks, lists, asides
+    "parameters": [{"name": str, "description": str}],
+    "returns": str,          # Rendered Return Value body
     "url": str,
-    "json_url": str
+    "json_url": str,
 }
 ```
+
+Optional (present only when the page has them):
+```python
+{
+    "deprecation": str,                 # Deprecation notice (use other API instead, etc.)
+    "possible_values": [                # Enum-like property-list keys
+        {"name": str, "description": str}
+    ],
+    "content_sections": {                # Any non-Discussion/Return-Value headings (Overview, etc.)
+        "Heading": str
+    },
+    "see_also": [                        # Related topic groups
+        {"title": str, "items": [{"title": str, "url": str}]}
+    ],
+    "relationships": [                   # Conforms-to / Inherits-from / Inherited-by
+        {"title": str, "kind": str, "items": [{"title": str, "url": str}]}
+    ],
+    "mentions": [                        # Cross-references to this symbol
+        {"title": str, "url": str}
+    ],
+    "details": {                         # Property-list key metadata (name, platforms, titleStyle)
+        ...
+    },
+    "symbols": [                         # Framework/type index pages
+        {"name": str, "declaration": str, "abstract": str,
+         "group": str, "role": str, "url": str}
+    ],
+}
+```
+
+Discussion and other rendered fields produce markdown-style text: fenced code blocks (```lang ... ```), `- item` bullets, `**Note:**` / `**Important:**` aside prefixes, and `` `title` `` for cross-references.
 
 **Example:**
 ```python
 doc = fetch_documentation("https://developer.apple.com/documentation/swiftui/view")
 result = {"title": doc["title"], "signature": doc.get("declaration")}
+
+# Enum-like property-list key with many possible values
+doc = fetch_documentation("https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacycollecteddatatypes/nsprivacycollecteddatatype")
+result = [v["name"] for v in doc.get("possible_values", [])]
+
+# Find related APIs and check for deprecation
+doc = fetch_documentation("https://developer.apple.com/documentation/uikit/uialertview")
+result = {"deprecated": doc.get("deprecation"), "see_also": doc.get("see_also")}
 ```
 
 ---

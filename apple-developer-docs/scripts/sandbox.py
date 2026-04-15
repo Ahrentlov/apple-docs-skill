@@ -88,6 +88,7 @@ except (ValueError, resource.error):
 ALLOWED_BUILTINS = {{
     'len': len, 'range': range, 'enumerate': enumerate, 'zip': zip,
     'map': map, 'filter': filter, 'reversed': reversed,
+    'iter': iter, 'next': next,
     'min': min, 'max': max, 'sum': sum, 'any': any, 'all': all, 'sorted': sorted,
     'abs': abs, 'round': round, 'pow': pow, 'divmod': divmod,
     'list': list, 'dict': dict, 'set': set, 'tuple': tuple,

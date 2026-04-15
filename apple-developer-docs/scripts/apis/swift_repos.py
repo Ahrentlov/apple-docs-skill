@@ -103,14 +103,14 @@ def fetch_github_file(url: str) -> Dict:
         return {
             "error": "Invalid URL",
             "message": "URL must be from github.com or raw.githubusercontent.com",
-            "suggestion": "Example: https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/Task.swift"
+            "suggestion": "https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/Task.swift"
         }
     path_parts = parsed.path.strip('/').split('/')
     if not path_parts or path_parts[0] not in _api.ALLOWED_ORGS:
         return {
             "error": "Invalid URL",
             "message": "URL must be from github.com/apple/ or github.com/swiftlang/ organizations",
-            "suggestion": "Example: https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/Task.swift"
+            "suggestion": "https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/Task.swift"
         }
 
     try:

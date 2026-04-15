@@ -1,20 +1,11 @@
 ---
 name: apple-developer-docs
-description: >-
-  Execute Python code to query and filter Apple developer documentation
-  (SwiftUI, UIKit, all frameworks), Swift Evolution proposals, Swift Forums discussions,
-  WWDC session notes, Human Interface Guidelines, and Apple/SwiftLang GitHub source code.
-  TRIGGER when: user asks about Apple API docs, Swift proposals (SE-xxxx),
-  Swift Forums discussions, WWDC sessions, HIG design patterns, or wants to read Swift source from GitHub.
-  Examples: "look up SwiftUI View", "find async proposals", "what changed in Swift 6",
-  "search WWDC for concurrency", "check HIG navigation patterns",
-  "fetch the source for Task.swift", "search Swift Forums for ownership".
-  Do NOT trigger for general Swift programming questions without documentation lookup.
+description: "Execute Python code to query and filter Apple developer documentation (SwiftUI, UIKit, all frameworks), Swift Evolution proposals, Swift Forums discussions, WWDC session notes, Human Interface Guidelines, and Apple/SwiftLang GitHub source code. TRIGGER when: user asks about Apple API docs, Swift proposals (SE-xxxx), Swift Forums discussions, WWDC sessions, HIG design patterns, or wants to read Swift source from GitHub. Examples: look up SwiftUI View, find async proposals, what changed in Swift 6, search WWDC for concurrency, check HIG navigation patterns, fetch the source for Task.swift, search Swift Forums for ownership. Do NOT trigger for general Swift programming questions without documentation lookup."
 license: MIT
 allowed-tools: "Bash(python3:*)"
 metadata:
   author: Patrick Ahrentløv
-  version: 1.1.0
+  version: 1.2.0
 ---
 
 # Apple Developer Docs
@@ -58,7 +49,7 @@ For full API signatures and return types, consult `references/api-reference.md`.
 
 ### Available Builtins
 - Data types: `list`, `dict`, `set`, `tuple`, `str`, `int`, `float`, `bool`, `bytes`
-- Iteration: `len`, `range`, `enumerate`, `zip`, `map`, `filter`, `reversed`, `sorted`
+- Iteration: `len`, `range`, `enumerate`, `zip`, `map`, `filter`, `reversed`, `sorted`, `iter`, `next`
 - Aggregation: `min`, `max`, `sum`, `any`, `all`
 - Math: `abs`, `round`, `pow`
 - Type checking: `isinstance`, `type`
