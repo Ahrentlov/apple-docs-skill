@@ -1,11 +1,11 @@
 ---
 name: apple-developer-docs
-description: "Execute Python code to query and filter Apple developer documentation (SwiftUI, UIKit, all frameworks), Swift Evolution proposals, Swift Forums discussions, WWDC session notes, Human Interface Guidelines, and Apple/SwiftLang GitHub source code. TRIGGER when: user asks about Apple API docs, Swift proposals (SE-xxxx), Swift Forums discussions, WWDC sessions, HIG design patterns, or wants to read Swift source from GitHub. Examples: look up SwiftUI View, find async proposals, what changed in Swift 6, search WWDC for concurrency, check HIG navigation patterns, fetch the source for Task.swift, search Swift Forums for ownership. Do NOT trigger for general Swift programming questions without documentation lookup."
+description: "Execute Python code to query and filter Apple developer documentation (SwiftUI, UIKit, all frameworks), Apple's legacy Documentation Archive (Tech Notes, Sample Code, Guides), Swift Evolution proposals, Swift Forums discussions, WWDC session notes, Human Interface Guidelines, Apple/SwiftLang GitHub source code, and Swift compiler internals docs. TRIGGER when: user asks about Apple API docs, archived/legacy Apple docs, Swift proposals (SE-xxxx), Swift Forums, WWDC, HIG, Swift source code, or Swift compiler internals (SIL, IRGen, Sema, ABI, mangling). Examples: look up SwiftUI View, find async proposals, what changed in Swift 6, search WWDC for concurrency, check HIG navigation patterns, fetch Task.swift source, find archived Core Data sample code, read SIL ownership docs. Do NOT trigger for general Swift programming questions without documentation lookup."
 license: MIT
 allowed-tools: "Bash(python3:*)"
 metadata:
   author: Patrick Ahrentløv
-  version: 1.2.0
+  version: 1.3.0
 ---
 
 # Apple Developer Docs
@@ -44,6 +44,17 @@ Output is JSON with `success`, `result`, `stdout`, `error`, and `execution_time_
 - `get_wwdc_session(session_id)` - Get session URLs (format: wwdc2023-10154)
 - `search_hig_urls(query, platform=None)` - Search Human Interface Guidelines
 - `list_hig_platforms()` - List all HIG platforms
+
+### Documentation Archive (legacy)
+- `search_archive(query, platform=None, framework=None, resource_type=None, topic=None, limit=25)` - Search ~5200 archived docs (Tech Notes, Tech Q&As, Sample Code, Guides, Release Notes)
+- `list_archive_frameworks()` - List frameworks available as filters
+- `list_archive_topics()` - List topic categories
+- `list_archive_resource_types()` - List resource types
+
+### Swift Compiler Internals
+- `search_compiler_docs(query, limit=25)` - Search `swiftlang/swift/docs` (SIL, ABI, type checker, generics, ownership, etc.). Pair with `fetch_github_file`.
+- `list_compiler_phases()` - List the compiler pipeline phases (Parse → Sema → SILGen → IRGen)
+- `get_compiler_phase(name)` - Get a specific phase (e.g. 'Parsing', 'IRGen', 'Sema')
 
 For full API signatures and return types, consult `references/api-reference.md`.
 

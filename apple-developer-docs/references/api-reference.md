@@ -316,3 +316,134 @@ List HIG platforms.
     }
 ]
 ```
+
+---
+
+## Documentation Archive
+
+Search Apple's legacy documentation archive at `developer.apple.com/library/archive/`:
+~5200 Technical Notes, Technical Q&As, Sample Code projects, Guides, Release Notes,
+and Articles — most removed from the modern docs site but still canonical for
+pre-SwiftUI/UIKit-era topics.
+
+### search_archive(query: str, platform: str = None, framework: str = None, resource_type: str = None, topic: str = None, limit: int = 25) -> Dict
+
+Keyword search across archived document titles, with optional facet filters.
+
+**Parameters:**
+- `query`: Space-separated keywords (matched case-insensitively against the title; all terms must match)
+- `platform`: Platform substring filter — `"iOS"`, `"macOS"`, `"tvOS"`, `"watchOS"`, `"Safari"`, `"Xcode Developer Tools"`, etc. Many docs list multiple platforms.
+- `framework`: Framework/technology name, e.g. `"CoreData"`, `"UIKit"`, `"AVFoundation"`. Use `list_archive_frameworks()` for the full set.
+- `resource_type`: `"Technical Notes"`, `"Technical Q&As"`, `"Sample Code"`, `"Guides"`, `"Release Notes"`, `"Articles"`, `"Getting Started"`, `"Xcode Tasks"` (substring match).
+- `topic`: Topic category, e.g. `"Networking"`, `"Graphics & Animation"`. Use `list_archive_topics()`.
+- `limit`: Max results (default 25).
+
+**Returns:**
+```python
+{
+    "query": str,
+    "filters": {"platform": str|None, "framework": str|None, "resource_type": str|None, "topic": str|None},
+    "total_matches": int,
+    "returned": int,
+    "results": [
+        {
+            "name": str,           # Document title
+            "id": str,             # Apple's doc UID, e.g. "DTS40009554"
+            "resource_type": str,
+            "topic": str,
+            "framework": str,
+            "platform": str,       # Pipe-delimited when multiple, e.g. "iOS|macOS"
+            "date": str,           # YYYY-MM-DD
+            "url": str             # Absolute URL on developer.apple.com/library/archive/
+        }
+    ]
+}
+```
+
+Results are sorted newest first.
+
+---
+
+### list_archive_frameworks() -> Dict
+
+```python
+{"count": int, "frameworks": [str, ...]}   # e.g. "UIKit", "CoreData", "QuickTime"
+```
+
+### list_archive_topics() -> Dict
+
+```python
+{"count": int, "topics": [str, ...]}       # e.g. "Audio", "Networking", "Graphics & Animation"
+```
+
+### list_archive_resource_types() -> Dict
+
+```python
+{"count": int, "resource_types": [str, ...]}   # 8 types
+```
+
+---
+
+## Swift Compiler Internals
+
+Search the Swift compiler's in-repo documentation (`github.com/swiftlang/swift/tree/main/docs`).
+Covers SIL, ABI, type checker, runtime, optimizer passes, ownership, generics, and C++ interop.
+
+### search_compiler_docs(query: str, limit: int = 25) -> Dict
+
+Keyword search against file paths in `swiftlang/swift/docs`. Pair the returned
+`raw_url` with `fetch_github_file()` to read a doc's contents.
+
+**Parameters:**
+- `query`: Space-separated keywords matched against the file path (directory + filename). All terms must match.
+- `limit`: Max results (default 25).
+
+**Returns:**
+```python
+{
+    "query": str,
+    "total_matches": int,
+    "returned": int,
+    "results": [
+        {
+            "path": str,          # e.g. "docs/SIL/Ownership.md"
+            "name": str,          # e.g. "Ownership.md"
+            "directory": str,     # e.g. "docs/SIL"
+            "github_url": str,    # Web URL
+            "raw_url": str        # Fetch with fetch_github_file()
+        }
+    ]
+}
+```
+
+---
+
+### list_compiler_phases() -> Dict
+
+List the Swift compiler pipeline phases, each with its `lib/` directory.
+
+**Returns:**
+```python
+{
+    "landing_url": str,     # swift.org/documentation/swift-compiler/
+    "phases": [
+        {
+            "name": str,              # e.g. "SIL Generation"
+            "description": str,
+            "lib_path": str,          # e.g. "lib/SILGen"
+            "github_url": str,        # Link into swiftlang/swift
+            "design_doc": str         # Only on phases with a dedicated design doc
+        }
+    ]
+}
+```
+
+---
+
+### get_compiler_phase(name: str) -> Dict
+
+Get a single phase by case-insensitive substring match against its name or lib path
+(e.g. `"SIL Generation"`, `"Sema"`, `"IRGen"`).
+
+**Returns:** The phase dict (see above) on a unique match, or an error dict with
+`"available"` / `"candidates"` when unknown or ambiguous.

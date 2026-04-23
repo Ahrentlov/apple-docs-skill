@@ -167,6 +167,34 @@ def list_hig_platforms():
     """List all HIG platforms."""
     return _make_api_call("list_hig_platforms")
 
+def search_archive(query, platform=None, framework=None, resource_type=None, topic=None, limit=25):
+    """Search Apple's Documentation Archive (legacy library/archive)."""
+    return _make_api_call("search_archive", query, platform, framework, resource_type, topic, limit)
+
+def list_archive_frameworks():
+    """List all frameworks in the Documentation Archive."""
+    return _make_api_call("list_archive_frameworks")
+
+def list_archive_topics():
+    """List all topics in the Documentation Archive."""
+    return _make_api_call("list_archive_topics")
+
+def list_archive_resource_types():
+    """List all resource types in the Documentation Archive."""
+    return _make_api_call("list_archive_resource_types")
+
+def search_compiler_docs(query, limit=25):
+    """Search Swift compiler docs in swiftlang/swift/docs."""
+    return _make_api_call("search_compiler_docs", query, limit)
+
+def list_compiler_phases():
+    """List Swift compiler pipeline phases."""
+    return _make_api_call("list_compiler_phases")
+
+def get_compiler_phase(name):
+    """Get a single Swift compiler phase by name."""
+    return _make_api_call("get_compiler_phase", name)
+
 # Create namespace with allowed builtins and API functions
 namespace = {{'__builtins__': ALLOWED_BUILTINS}}
 namespace['fetch_documentation'] = fetch_documentation
@@ -183,6 +211,15 @@ namespace['search_wwdc_notes_urls'] = search_wwdc_notes_urls
 namespace['get_wwdc_session'] = get_wwdc_session
 namespace['search_hig_urls'] = search_hig_urls
 namespace['list_hig_platforms'] = list_hig_platforms
+
+namespace['search_archive'] = search_archive
+namespace['list_archive_frameworks'] = list_archive_frameworks
+namespace['list_archive_topics'] = list_archive_topics
+namespace['list_archive_resource_types'] = list_archive_resource_types
+
+namespace['search_compiler_docs'] = search_compiler_docs
+namespace['list_compiler_phases'] = list_compiler_phases
+namespace['get_compiler_phase'] = get_compiler_phase
 
 # User code execution
 user_output = []

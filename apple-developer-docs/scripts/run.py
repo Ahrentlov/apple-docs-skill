@@ -29,6 +29,10 @@ Available APIs in the sandbox:
 - get_wwdc_session(session_id) - Session URLs
 - search_hig_urls(query, platform?) - HIG search URLs
 - list_hig_platforms() - List HIG platforms
+- search_archive(query, ...) - Apple Documentation Archive (legacy library/archive)
+- list_archive_frameworks / list_archive_topics / list_archive_resource_types
+- search_compiler_docs(query) - swiftlang/swift /docs files
+- list_compiler_phases / get_compiler_phase - Swift compiler pipeline overview
 """
 
 import sys
@@ -46,6 +50,8 @@ from apis import (
     search_swift_repos_urls, fetch_github_file,
     search_wwdc_notes_urls, get_wwdc_session,
     search_hig_urls, list_hig_platforms,
+    search_archive, list_archive_frameworks, list_archive_topics, list_archive_resource_types,
+    search_compiler_docs, list_compiler_phases, get_compiler_phase,
 )
 
 
@@ -74,6 +80,17 @@ def create_api_handlers():
         # Human Interface Guidelines
         "search_hig_urls": search_hig_urls,
         "list_hig_platforms": list_hig_platforms,
+
+        # Documentation Archive (legacy developer.apple.com/library/archive)
+        "search_archive": search_archive,
+        "list_archive_frameworks": list_archive_frameworks,
+        "list_archive_topics": list_archive_topics,
+        "list_archive_resource_types": list_archive_resource_types,
+
+        # Swift Compiler Documentation (swiftlang/swift /docs)
+        "search_compiler_docs": search_compiler_docs,
+        "list_compiler_phases": list_compiler_phases,
+        "get_compiler_phase": get_compiler_phase,
     }
 
 

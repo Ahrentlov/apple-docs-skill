@@ -9,9 +9,11 @@ Instead of making multiple API calls and processing large JSON responses, this s
 ### Available APIs
 
 - **Apple Documentation** — Fetch and parse docs from developer.apple.com
+- **Documentation Archive** — Search ~5200 legacy Tech Notes, Tech Q&As, Sample Code, Guides, and Release Notes from developer.apple.com/library/archive
 - **Swift Evolution** — Search 500+ proposals by keyword, version, or status
 - **Swift Forums** — Search forums.swift.org for discussions, pitches, and review threads
 - **Swift Repositories** — Search and fetch source code from Apple/SwiftLang GitHub repos
+- **Swift Compiler Internals** — Search the compiler's own docs in `swiftlang/swift/docs` (SIL, ABI, type checker, IRGen, generics)
 - **WWDC Sessions** — Search session notes and get video links
 - **Human Interface Guidelines** — Search design guidance by topic and platform
 
@@ -34,6 +36,8 @@ The skill activates automatically when you ask about Apple APIs, Swift Evolution
 - "Search WWDC sessions on concurrency"
 - "Check the HIG for navigation patterns"
 - "Fetch the Swift source for Task"
+- "Find archived Core Data sample code"
+- "Read the compiler's SIL ownership docs"
 
 ## Token efficiency
 
@@ -66,8 +70,10 @@ apple-developer-docs/
 │   ├── security.py       # AST-based code validation
 │   └── apis/             # API implementations
 │       ├── apple_docs.py
-│       ├── swift_evolution.py  # Proposals + Forums
+│       ├── archive.py            # Documentation Archive
+│       ├── swift_evolution.py    # Proposals + Forums
 │       ├── swift_repos.py
+│       ├── swift_compiler.py     # Compiler internals docs
 │       ├── wwdc_notes.py
 │       └── hig.py
 └── references/
