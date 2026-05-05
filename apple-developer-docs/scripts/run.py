@@ -17,22 +17,40 @@ The sandbox provides:
 - Resource limits (CPU, memory)
 - JSON output for easy parsing
 
-Available APIs in the sandbox:
-- fetch_documentation(url) - Apple Developer docs
-- search_apple_online_urls(query, platform?) - Apple docs search URLs
-- get_framework_info(framework) - Framework documentation URLs
-- search_proposals(feature) - Swift Evolution proposals
-- get_proposal(se_number) - Specific proposal details
-- search_swift_repos_urls(query) - Apple/SwiftLang GitHub search URLs
-- fetch_github_file(url) - Fetch file from GitHub
-- search_wwdc_notes_urls(query) - WWDC session search URLs
-- get_wwdc_session(session_id) - Session URLs
-- search_hig_urls(query, platform?) - HIG search URLs
-- list_hig_platforms() - List HIG platforms
-- search_archive(query, ...) - Apple Documentation Archive (legacy library/archive)
+Available APIs in the sandbox (see SKILL.md / api-reference.md for full signatures):
+
+Apple Documentation
+- fetch_documentation(url)              - Parse any /documentation/ or /design/human-interface-guidelines/ page
+- search_apple_online_urls(query, ...)  - Apple docs search URLs
+- get_framework_info(framework)         - Framework documentation URL
+
+Swift Evolution & Forums
+- search_proposals(feature) / get_proposal(se_number)
+- search_swift_forums(query, ...) / search_swift_forums_urls(query, ...)
+
+Swift Repositories
+- search_swift_repos_urls(query) / fetch_github_file(url)
+
+WWDC Sessions
+- search_wwdc_sessions(query, year?, limit?)  - Search ~3000 sessions
+- fetch_wwdc_session(session_id)              - Fetch the actual community-written notes
+- search_wwdc_notes_urls / get_wwdc_session   - Legacy URL-only helpers
+
+Human Interface Guidelines
+- search_hig(query, platform?, limit?) / fetch_hig(topic)
+- search_hig_urls / list_hig_platforms        - Legacy URL-only helpers
+
+Documentation Archive
+- search_archive(query, platform?, framework?, resource_type?, topic?, limit?)
 - list_archive_frameworks / list_archive_topics / list_archive_resource_types
-- search_compiler_docs(query) - swiftlang/swift /docs files
-- list_compiler_phases / get_compiler_phase - Swift compiler pipeline overview
+
+Swift Compiler Internals
+- search_compiler_docs(query, limit?)            - File-path search
+- search_compiler_docs_text(query, limit?, ...)  - Full-text grep
+- list_compiler_phases / get_compiler_phase
+
+Xcode Release Notes
+- list_xcode_release_notes(major?) / get_xcode_release_notes_url(version)
 """
 
 import sys
@@ -43,55 +61,13 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
+import apis
 from sandbox import SandboxExecutor
-from apis import (
-    fetch_documentation, search_apple_online_urls, get_framework_info,
-    search_proposals, get_proposal, search_swift_forums_urls, search_swift_forums,
-    search_swift_repos_urls, fetch_github_file,
-    search_wwdc_notes_urls, get_wwdc_session,
-    search_hig_urls, list_hig_platforms,
-    search_archive, list_archive_frameworks, list_archive_topics, list_archive_resource_types,
-    search_compiler_docs, list_compiler_phases, get_compiler_phase,
-)
 
 
 def create_api_handlers():
-    """Create the API handler dictionary for the sandbox."""
-    return {
-        # Apple Documentation
-        "fetch_documentation": fetch_documentation,
-        "search_apple_online_urls": search_apple_online_urls,
-        "get_framework_info": get_framework_info,
-
-        # Swift Evolution & Forums
-        "search_proposals": search_proposals,
-        "get_proposal": get_proposal,
-        "search_swift_forums_urls": search_swift_forums_urls,
-        "search_swift_forums": search_swift_forums,
-
-        # Swift Repos
-        "search_swift_repos_urls": search_swift_repos_urls,
-        "fetch_github_file": fetch_github_file,
-
-        # WWDC Notes
-        "search_wwdc_notes_urls": search_wwdc_notes_urls,
-        "get_wwdc_session": get_wwdc_session,
-
-        # Human Interface Guidelines
-        "search_hig_urls": search_hig_urls,
-        "list_hig_platforms": list_hig_platforms,
-
-        # Documentation Archive (legacy developer.apple.com/library/archive)
-        "search_archive": search_archive,
-        "list_archive_frameworks": list_archive_frameworks,
-        "list_archive_topics": list_archive_topics,
-        "list_archive_resource_types": list_archive_resource_types,
-
-        # Swift Compiler Documentation (swiftlang/swift /docs)
-        "search_compiler_docs": search_compiler_docs,
-        "list_compiler_phases": list_compiler_phases,
-        "get_compiler_phase": get_compiler_phase,
-    }
+    """Map every public name in `apis.__all__` to its callable."""
+    return {name: getattr(apis, name) for name in apis.__all__}
 
 
 def main():

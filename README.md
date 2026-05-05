@@ -8,14 +8,15 @@ Instead of making multiple API calls and processing large JSON responses, this s
 
 ### Available APIs
 
-- **Apple Documentation** — Fetch and parse docs from developer.apple.com
+- **Apple Documentation** — Fetch and parse docs from developer.apple.com (works for `/documentation/` and `/design/human-interface-guidelines/`)
 - **Documentation Archive** — Search ~5200 legacy Tech Notes, Tech Q&As, Sample Code, Guides, and Release Notes from developer.apple.com/library/archive
 - **Swift Evolution** — Search 500+ proposals by keyword, version, or status
 - **Swift Forums** — Search forums.swift.org for discussions, pitches, and review threads
 - **Swift Repositories** — Search and fetch source code from Apple/SwiftLang GitHub repos
-- **Swift Compiler Internals** — Search the compiler's own docs in `swiftlang/swift/docs` (SIL, ABI, type checker, IRGen, generics)
-- **WWDC Sessions** — Search session notes and get video links
-- **Human Interface Guidelines** — Search design guidance by topic and platform
+- **Swift Compiler Internals** — Search compiler docs in `swiftlang/swift/docs` by filename or full text (SIL, ABI, type checker, IRGen, generics)
+- **WWDC Sessions** — Search ~3000 sessions; fetch community-written markdown notes
+- **Human Interface Guidelines** — Search and fetch HIG topics (Buttons, Dark Mode, Accessibility, …)
+- **Xcode Release Notes** — Discover every Xcode release-notes page; resolve versions to URLs
 
 ## Installation
 
@@ -33,11 +34,12 @@ The skill activates automatically when you ask about Apple APIs, Swift Evolution
 - "Look up the SwiftUI View protocol"
 - "Find Swift Evolution proposals about async"
 - "What's the forum discussion around SE-0461?"
-- "Search WWDC sessions on concurrency"
-- "Check the HIG for navigation patterns"
+- "Search WWDC sessions on concurrency and fetch the top one"
+- "Show me the HIG topic on Dark Mode"
 - "Fetch the Swift source for Task"
 - "Find archived Core Data sample code"
-- "Read the compiler's SIL ownership docs"
+- "Grep the compiler docs for 'reborrow'"
+- "What changed in Xcode 15.4?"
 
 ## Token efficiency
 
@@ -69,13 +71,15 @@ apple-developer-docs/
 │   ├── sandbox.py        # Sandboxed execution environment
 │   ├── security.py       # AST-based code validation
 │   └── apis/             # API implementations
+│       ├── _utils.py             # Shared fetch+cache helpers (memory + disk)
 │       ├── apple_docs.py
 │       ├── archive.py            # Documentation Archive
 │       ├── swift_evolution.py    # Proposals + Forums
 │       ├── swift_repos.py
-│       ├── swift_compiler.py     # Compiler internals docs
-│       ├── wwdc_notes.py
-│       └── hig.py
+│       ├── swift_compiler.py     # Compiler internals (path + full-text search)
+│       ├── wwdc_notes.py         # WWDC search + note fetch
+│       ├── hig.py                # HIG search + topic fetch
+│       └── xcode_releases.py     # Xcode release-notes index
 └── references/
     ├── api-reference.md  # Full API signatures and return types
     └── security.md       # Sandbox security model

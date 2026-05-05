@@ -85,32 +85,23 @@ class CodeValidator:
         if not code or not code.strip():
             return ValidationResult.unsafe(["Empty code provided"])
 
-        # Check 3: AST-based validation
         try:
             tree = ast.parse(code)
-            ast_errors = self._validate_ast(tree)
+            ast_errors, has_result = self._scan_ast(tree)
             if ast_errors:
                 return ValidationResult.unsafe(ast_errors)
         except SyntaxError as e:
             return ValidationResult.unsafe([f"Syntax error: {e.msg} at line {e.lineno}"])
 
-        # Check 4: Verify 'result' assignment exists
-        if not self._has_result_assignment(tree):
+        if not has_result:
             warnings.append("Code should assign to 'result' variable to return data")
 
         return ValidationResult(is_safe=True, errors=[], warnings=warnings)
 
-    def _validate_ast(self, tree: ast.AST) -> List[str]:
-        """
-        Validate AST for dangerous constructs.
-
-        Args:
-            tree: Parsed AST
-
-        Returns:
-            List of error messages (empty if safe)
-        """
-        errors = []
+    def _scan_ast(self, tree: ast.AST) -> tuple[List[str], bool]:
+        """Single-pass AST walk returning (errors, has_result_assignment)."""
+        errors: List[str] = []
+        has_result = False
 
         for node in ast.walk(tree):
             match node:
@@ -135,24 +126,11 @@ class CodeValidator:
                 case ast.Name(id=name) if name.startswith('__') and name.endswith('__'):
                     errors.append(f"Dunder name '{name}' is not allowed")
 
-        return errors
+                case ast.Assign(targets=targets):
+                    if any(isinstance(t, ast.Name) and t.id == 'result' for t in targets):
+                        has_result = True
 
-    def _has_result_assignment(self, tree: ast.AST) -> bool:
-        """
-        Check if code assigns to 'result' variable.
+                case ast.AnnAssign(target=ast.Name(id='result')):
+                    has_result = True
 
-        Args:
-            tree: Parsed AST
-
-        Returns:
-            True if 'result' is assigned
-        """
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == 'result':
-                        return True
-            elif isinstance(node, ast.AnnAssign):
-                if isinstance(node.target, ast.Name) and node.target.id == 'result':
-                    return True
-        return False
+        return errors, has_result

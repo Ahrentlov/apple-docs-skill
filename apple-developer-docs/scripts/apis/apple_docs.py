@@ -10,37 +10,25 @@ import socket
 import urllib.request
 import urllib.parse
 import urllib.error
-import time
 from typing import Dict, Optional
+
+from ._utils import UA_APPLE_BROWSER
 
 
 class AppleDocsAPI:
     """Interface to Apple Developer documentation via JSON API."""
 
-    def __init__(self):
-        self.cache = {}
-        self.cache_ttl = 3600
-        self.base_url = "https://developer.apple.com/documentation/"
-
     def _fetch_json(self, url: str) -> Dict:
-        """Fetch JSON with caching. Raises on any failure — callers should handle exceptions."""
-        cache_key = f"{url}:{int(time.time() // self.cache_ttl)}"
-        if cache_key in self.cache:
-            return self.cache[cache_key]
-
+        """Fetch JSON. Raises on any failure — callers handle exceptions."""
         req = urllib.request.Request(
             url,
             headers={
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+                'User-Agent': UA_APPLE_BROWSER,
                 'Accept': 'application/json'
             }
         )
         with urllib.request.urlopen(req, timeout=10) as response:
-            data = json.loads(response.read())
-        self.cache[cache_key] = data
-        if len(self.cache) > 100:
-            self.cache = dict(list(self.cache.items())[-50:])
-        return data
+            return json.loads(response.read())
 
     def _extract_declaration(self, sections: list) -> str:
         """Extract declaration text from primaryContentSections."""
@@ -208,11 +196,8 @@ class AppleDocsAPI:
                     out.append(item)
         return out
 
-    def _extract_abstract(self, items: list) -> str:
-        """Extract abstract text from abstract items."""
-        return "".join(
-            item.get("text", "") for item in items if item.get("type") == "text"
-        )
+    def _extract_abstract(self, items: list, references: Optional[Dict] = None) -> str:
+        return self._extract_inline_text(items, references)
 
     def _extract_symbols(self, data: Dict) -> list:
         """Extract child symbols from topicSections and references."""
@@ -226,11 +211,7 @@ class AppleDocsAPI:
                     continue
                 fragments = ref.get("fragments", [])
                 declaration = "".join(f.get("text", "") for f in fragments)
-                abstract_items = ref.get("abstract", [])
-                abstract = "".join(
-                    item.get("text", "") for item in abstract_items
-                    if item.get("type") == "text"
-                )
+                abstract = self._extract_inline_text(ref.get("abstract", []), references)
                 symbols.append({
                     "name": ref.get("title", ""),
                     "declaration": declaration,
@@ -250,7 +231,7 @@ class AppleDocsAPI:
 
         result = {
             "title": data.get("metadata", {}).get("title", "Unknown"),
-            "abstract": self._extract_abstract(data.get("abstract", [])),
+            "abstract": self._extract_abstract(data.get("abstract", []), references),
             "declaration": self._extract_declaration(sections),
             "discussion": headings.pop("Discussion", ""),
             "parameters": self._extract_parameters(sections, references),
@@ -277,22 +258,43 @@ class AppleDocsAPI:
 _api = AppleDocsAPI()
 
 
+_DOC_URL_PREFIXES = (
+    ("https://developer.apple.com/documentation/", "/documentation/", "documentation"),
+    ("https://developer.apple.com/design/human-interface-guidelines/", "/design/human-interface-guidelines/", "design/human-interface-guidelines"),
+)
+
+
 def fetch_documentation(url: str) -> Dict:
     """Fetch and parse documentation from Apple Developer website.
 
+    Accepts URLs from `developer.apple.com/documentation/` or
+    `developer.apple.com/design/human-interface-guidelines/` (HIG uses the
+    same DocC JSON schema).
+
     On failure, returns a dict with an ``error`` key identifying the cause:
-      * ``invalid_url`` — URL doesn't start with developer.apple.com/documentation/
+      * ``invalid_url`` — URL doesn't match an accepted developer.apple.com prefix
       * ``not_found``  — page doesn't exist (HTTP 404)
       * ``http_error`` — other HTTP status (includes ``status`` field)
       * ``timeout``    — request exceeded 10s
       * ``network_error`` — DNS/connection/reset/SSL failure (includes ``reason`` field)
       * ``invalid_json`` — response wasn't valid JSON
     """
-    if not url.startswith("https://developer.apple.com/documentation/"):
-        return {"error": "invalid_url", "message": "URL must be from developer.apple.com/documentation/", "url": url}
+    json_path_prefix: Optional[str] = None
+    path: Optional[str] = None
+    for prefix, splitter, json_segment in _DOC_URL_PREFIXES:
+        if url.startswith(prefix):
+            path = url.split(splitter, 1)[1].rstrip('/')
+            json_path_prefix = json_segment
+            break
 
-    path = url.split("/documentation/", 1)[1].rstrip('/')
-    json_url = f"https://developer.apple.com/tutorials/data/documentation/{path}.json"
+    if path is None or json_path_prefix is None:
+        return {
+            "error": "invalid_url",
+            "message": "URL must be from developer.apple.com/documentation/ or /design/human-interface-guidelines/",
+            "url": url,
+        }
+
+    json_url = f"https://developer.apple.com/tutorials/data/{json_path_prefix}/{path}.json"
 
     try:
         data = _api._fetch_json(json_url)

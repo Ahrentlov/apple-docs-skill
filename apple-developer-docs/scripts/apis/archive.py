@@ -12,9 +12,9 @@ Backed by the same `library.json` the archive's navigation page loads client-sid
 import html
 import json
 import re
-import time
-import urllib.request
 from typing import Dict, List, Optional
+
+from ._utils import UA_APPLE_BROWSER, all_terms_match, fetch_json
 
 
 ARCHIVE_BASE = "https://developer.apple.com/library/archive"
@@ -31,34 +31,21 @@ TOPIC_TARGETS = {"Resource Types": "type", "Technologies": "framework", "Topics"
 _TRAILING_COMMA_RE = re.compile(r',(\s*[}\]])')
 
 
-class ArchiveAPI:
-    def __init__(self):
-        self.cache: Optional[Dict] = None
-        self.maps: Optional[Dict[str, Dict[int, str]]] = None
-        self.cache_time = 0.0
-        self.cache_ttl = 3600
+def _decode_library_json(text: str) -> Dict:
+    # library.json uses JS-style trailing commas (evalJSON-compatible).
+    return json.loads(_TRAILING_COMMA_RE.sub(r'\1', text))
 
+
+class ArchiveAPI:
     def _fetch_library(self) -> Optional[Dict]:
-        if self.cache and (time.time() - self.cache_time) < self.cache_ttl:
-            return self.cache
-        try:
-            req = urllib.request.Request(
-                LIBRARY_JSON_URL,
-                headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
-            )
-            with urllib.request.urlopen(req, timeout=15) as response:
-                raw = response.read().decode('utf-8')
-            # library.json uses JS-style trailing commas (evalJSON-compatible).
-            data = json.loads(_TRAILING_COMMA_RE.sub(r'\1', raw))
-            self.cache = data
-            self.maps = self._build_maps(data)
-            self.cache_time = time.time()
-            return data
-        except Exception:
-            return None
+        return fetch_json(
+            LIBRARY_JSON_URL,
+            ua=UA_APPLE_BROWSER,
+            decoder=_decode_library_json,
+        )
 
     def _build_maps(self, data: Dict) -> Dict[str, Dict[int, str]]:
-        maps: Dict[str, Dict[int, str]] = {"topic": {}, "framework": {}, "type": {}, "subtopic": {}}
+        maps: Dict[str, Dict[int, str]] = {"topic": {}, "framework": {}, "type": {}}
         for topic in data.get('topics', []):
             target = TOPIC_TARGETS.get(topic.get('name', ''))
             if not target:
@@ -72,10 +59,7 @@ class ArchiveAPI:
                     key = int(raw_key)
                 except (TypeError, ValueError):
                     key = raw_key
-                label = html.unescape(entry.get('name', ''))
-                maps[target][key] = label
-                if target == 'topic':
-                    maps['subtopic'][key] = label
+                maps[target][key] = html.unescape(entry.get('name', ''))
         return maps
 
     def _resolve_url(self, relative: str) -> str:
@@ -88,11 +72,11 @@ class ArchiveAPI:
             return f"{ARCHIVE_BASE}/{relative[3:]}"
         return f"{ARCHIVE_BASE}/navigation/{relative}"
 
-    def _doc_to_dict(self, row: List, maps: Dict[str, Dict]) -> Dict:
-        def col(name):
-            return row[COLUMNS[name]]
+    def _doc_to_dict(self, row: List, maps: Dict[str, Dict], name: str) -> Dict:
+        def col(key):
+            return row[COLUMNS[key]]
         return {
-            "name": html.unescape(col("name") or ""),
+            "name": name,
             "id": col("id"),
             "resource_type": maps["type"].get(col("type"), ""),
             "topic": maps["topic"].get(col("topic"), ""),
@@ -104,11 +88,6 @@ class ArchiveAPI:
 
 
 _api = ArchiveAPI()
-
-
-def _matches(text: str, terms: List[str]) -> bool:
-    t = text.lower()
-    return all(term in t for term in terms)
 
 
 def search_archive(
@@ -137,14 +116,16 @@ def search_archive(
         Each doc: {name, id, resource_type, topic, framework, platform, date, url}
     """
     data = _api._fetch_library()
-    if not data or _api.maps is None:
+    if not data:
         return {
-            "error": "Failed to fetch library.json",
-            "suggestion": "Check connectivity to developer.apple.com"
+            "error": "fetch_failed",
+            "message": "Could not fetch library.json — check connectivity to developer.apple.com",
         }
 
     limit = max(0, limit)
-    maps = _api.maps
+    maps = _api._build_maps(data)
+    name_col = COLUMNS["name"]
+    doc_names = [html.unescape(row[name_col] or "") for row in data.get('documents', [])]
     terms = [t.lower() for t in (query or "").split() if t]
 
     platform_lc = platform.lower() if platform else None
@@ -152,7 +133,6 @@ def search_archive(
     rt_lc = resource_type.lower() if resource_type else None
     topic_lc = topic.lower() if topic else None
 
-    name_col = COLUMNS["name"]
     type_col = COLUMNS["type"]
     topic_col = COLUMNS["topic"]
     framework_col = COLUMNS["framework"]
@@ -160,11 +140,9 @@ def search_archive(
     date_col = COLUMNS["date"]
 
     matches: List[tuple] = []
-    for row in data.get('documents', []):
-        if terms:
-            raw_name = html.unescape(row[name_col] or "").lower()
-            if not _matches(raw_name, terms):
-                continue
+    for idx, row in enumerate(data.get('documents', [])):
+        if terms and not all_terms_match(doc_names[idx], terms):
+            continue
         if platform_lc and platform_lc not in (row[platform_col] or "").lower():
             continue
         if framework_lc and framework_lc not in maps["framework"].get(row[framework_col], "").lower():
@@ -174,11 +152,11 @@ def search_archive(
         if topic_lc and topic_lc not in maps["topic"].get(row[topic_col], "").lower():
             continue
 
-        matches.append((row[date_col] or "", row))
+        matches.append((row[date_col] or "", idx, row))
 
-    matches.sort(key=lambda pair: pair[0], reverse=True)
+    matches.sort(key=lambda triple: triple[0], reverse=True)
 
-    results = [_api._doc_to_dict(row, maps) for _, row in matches[:limit]]
+    results = [_api._doc_to_dict(row, maps, doc_names[idx]) for _, idx, row in matches[:limit]]
 
     return {
         "query": query,
@@ -193,16 +171,18 @@ def search_archive(
 
 
 def _list_archive_names(bucket: str) -> Optional[List[str]]:
-    if _api._fetch_library() is None or _api.maps is None:
+    data = _api._fetch_library()
+    if data is None:
         return None
-    return sorted({v for v in _api.maps[bucket].values() if v})
+    maps = _api._build_maps(data)
+    return sorted({v for v in maps[bucket].values() if v})
 
 
 def list_archive_frameworks() -> Dict:
     """List all framework/technology names available as filters in the archive."""
     names = _list_archive_names("framework")
     if names is None:
-        return {"error": "Failed to fetch library.json"}
+        return {"error": "fetch_failed", "message": "Could not fetch library.json"}
     return {"count": len(names), "frameworks": names}
 
 
@@ -210,7 +190,7 @@ def list_archive_topics() -> Dict:
     """List all topic categories available as filters in the archive."""
     names = _list_archive_names("topic")
     if names is None:
-        return {"error": "Failed to fetch library.json"}
+        return {"error": "fetch_failed", "message": "Could not fetch library.json"}
     return {"count": len(names), "topics": names}
 
 
@@ -218,5 +198,5 @@ def list_archive_resource_types() -> Dict:
     """List all resource-type filters in the archive (Technical Notes, Sample Code, etc.)."""
     names = _list_archive_names("type")
     if names is None:
-        return {"error": "Failed to fetch library.json"}
+        return {"error": "fetch_failed", "message": "Could not fetch library.json"}
     return {"count": len(names), "resource_types": names}

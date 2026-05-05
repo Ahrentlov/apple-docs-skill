@@ -187,6 +187,10 @@ def search_compiler_docs(query, limit=25):
     """Search Swift compiler docs in swiftlang/swift/docs."""
     return _make_api_call("search_compiler_docs", query, limit)
 
+def search_compiler_docs_text(query, limit=10, max_files=30):
+    """Full-text grep across Swift compiler doc files."""
+    return _make_api_call("search_compiler_docs_text", query, limit, max_files)
+
 def list_compiler_phases():
     """List Swift compiler pipeline phases."""
     return _make_api_call("list_compiler_phases")
@@ -194,6 +198,30 @@ def list_compiler_phases():
 def get_compiler_phase(name):
     """Get a single Swift compiler phase by name."""
     return _make_api_call("get_compiler_phase", name)
+
+def search_wwdc_sessions(query, year=None, limit=25):
+    """Search WWDC sessions by title + description."""
+    return _make_api_call("search_wwdc_sessions", query, year, limit)
+
+def fetch_wwdc_session(session_id):
+    """Fetch markdown notes for a WWDC session."""
+    return _make_api_call("fetch_wwdc_session", session_id)
+
+def search_hig(query, platform=None, limit=25):
+    """Search Human Interface Guidelines topics."""
+    return _make_api_call("search_hig", query, platform, limit)
+
+def fetch_hig(topic):
+    """Fetch HIG topic content by slug or title."""
+    return _make_api_call("fetch_hig", topic)
+
+def list_xcode_release_notes(major=None):
+    """List Xcode release-notes pages."""
+    return _make_api_call("list_xcode_release_notes", major)
+
+def get_xcode_release_notes_url(version):
+    """Resolve an Xcode version to its release-notes URL."""
+    return _make_api_call("get_xcode_release_notes_url", version)
 
 # Create namespace with allowed builtins and API functions
 namespace = {{'__builtins__': ALLOWED_BUILTINS}}
@@ -218,8 +246,18 @@ namespace['list_archive_topics'] = list_archive_topics
 namespace['list_archive_resource_types'] = list_archive_resource_types
 
 namespace['search_compiler_docs'] = search_compiler_docs
+namespace['search_compiler_docs_text'] = search_compiler_docs_text
 namespace['list_compiler_phases'] = list_compiler_phases
 namespace['get_compiler_phase'] = get_compiler_phase
+
+namespace['search_wwdc_sessions'] = search_wwdc_sessions
+namespace['fetch_wwdc_session'] = fetch_wwdc_session
+
+namespace['search_hig'] = search_hig
+namespace['fetch_hig'] = fetch_hig
+
+namespace['list_xcode_release_notes'] = list_xcode_release_notes
+namespace['get_xcode_release_notes_url'] = get_xcode_release_notes_url
 
 # User code execution
 user_output = []

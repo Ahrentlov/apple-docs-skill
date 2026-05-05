@@ -447,3 +447,161 @@ Get a single phase by case-insensitive substring match against its name or lib p
 
 **Returns:** The phase dict (see above) on a unique match, or an error dict with
 `"available"` / `"candidates"` when unknown or ambiguous.
+
+---
+
+### search_compiler_docs_text(query: str, limit: int = 10, max_files: int = 30) -> Dict
+
+Full-text search inside compiler doc files. Path-prefilters candidates by any
+keyword in the query, fetches up to `max_files` docs, then greps for all
+terms on the same line.
+
+**Returns:**
+```python
+{
+    "query": str,
+    "files_searched": int,
+    "total_matches": int,
+    "results": [
+        {
+            "path": str,             # e.g. "docs/SIL/Ownership.md"
+            "line_number": int,
+            "line": str,             # Trimmed match (max 240 chars)
+            "github_url": str        # Link with #L<line_number> anchor
+        }
+    ]
+}
+```
+
+---
+
+## WWDC Sessions
+
+Search ~3000 WWDC sessions and fetch community-written notes. Backed by the
+`wwdcnotes/wwdcnotes` GitHub repo.
+
+### search_wwdc_sessions(query: str, year: int | None = None, limit: int = 25) -> Dict
+
+Search WWDC sessions by title + description.
+
+**Parameters:**
+- `query`: Space-separated keywords. All terms must match somewhere in title + description.
+- `year`: Optional filter — full year (`2023`) or 2-digit (`23`).
+- `limit`: Max results (default 25).
+
+**Returns:**
+```python
+{
+    "query": str,
+    "year": int | None,
+    "total_matches": int,
+    "returned": int,
+    "results": [
+        {
+            "id": str,            # e.g. "wwdc2023-10154"
+            "title": str,
+            "year": int,
+            "code": str,          # session number
+            "description": str,
+            "permalink": str
+        }
+    ]
+}
+```
+
+Sorted newest year first, then by session code.
+
+---
+
+### fetch_wwdc_session(session_id: str) -> Dict
+
+Fetch community-written notes for a WWDC session.
+
+**Parameters:**
+- `session_id`: `'wwdc2023-10154'`, `'wwdc23-10154'`, or `'wwdc2023/10154'`.
+
+**Returns (success):**
+```python
+{
+    "id": str,            # canonical wwdc{4-digit-year}-{number}
+    "title": str,
+    "year": int,
+    "code": str,
+    "content": str,       # raw markdown notes
+    "source_url": str,    # raw.githubusercontent.com URL
+    "permalink": str      # wwdcnotes.com URL
+}
+```
+
+**Errors:** `invalid_session_id`, `year_not_indexed`, `session_not_found`, `fetch_failed`.
+
+---
+
+## Human Interface Guidelines
+
+### search_hig(query: str, platform: str | None = None, limit: int = 25) -> Dict
+
+Search HIG topics by title and abstract.
+
+**Returns:**
+```python
+{
+    "query": str,
+    "platform": str | None,
+    "total_matches": int,
+    "returned": int,
+    "results": [
+        {
+            "title": str,         # e.g. "Buttons"
+            "slug": str,          # e.g. "buttons"
+            "category": str,      # "Foundations", "Patterns", etc.
+            "url": str,
+            "abstract": str
+        }
+    ]
+}
+```
+
+---
+
+### fetch_hig(topic: str) -> Dict
+
+Fetch the full content of a HIG topic by slug (`'buttons'`) or title
+(`'Dark Mode'`). Returns the same shape as `fetch_documentation` (title,
+abstract, declaration, discussion, parameters, content_sections, etc.).
+
+Errors: `topic_not_found`, `ambiguous_topic` (with `candidates` list).
+
+---
+
+## Xcode Release Notes
+
+### list_xcode_release_notes(major: str | None = None) -> Dict
+
+List every Xcode release-notes page Apple publishes.
+
+**Parameters:**
+- `major`: Optional substring filter against the major-version heading (e.g. `'15'`, `'16'`, `'26'`).
+
+**Returns:**
+```python
+{
+    "count": int,
+    "releases": [
+        {
+            "version": str,       # e.g. "Xcode 15.4 Release Notes"
+            "major": str,         # e.g. "Xcode 15"
+            "url": str            # pass to fetch_documentation()
+        }
+    ]
+}
+```
+
+---
+
+### get_xcode_release_notes_url(version: str) -> Dict
+
+Resolve a version string (e.g. `'15.4'`, `'16.3'`, `'26.5 RC'`) to a single
+release-notes URL. Substring-matched against page titles.
+
+**Returns:** `{version, major, url}` on unique match, `{error: 'ambiguous_version', candidates: [...]}` when multiple match, `{error: 'version_not_found', available_count: N}` when missing.

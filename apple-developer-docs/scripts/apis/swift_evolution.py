@@ -11,8 +11,9 @@ import re
 import urllib.request
 import urllib.parse
 import json
-import time
 from typing import Dict, Optional, List
+
+from ._utils import UA_APP, fetch_json
 
 
 class SwiftEvolutionAPI:
@@ -22,28 +23,8 @@ class SwiftEvolutionAPI:
     GITHUB_WEB_BASE = "https://github.com/swiftlang/swift-evolution"
     GITHUB_RAW_BASE = "https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals"
 
-    def __init__(self):
-        self.cache = None
-        self.cache_time = 0
-        self.cache_ttl = 3600
-
     def _fetch_data(self) -> Optional[Dict]:
-        """Fetch and cache evolution.json from swift.org."""
-        if self.cache and (time.time() - self.cache_time) < self.cache_ttl:
-            return self.cache
-
-        try:
-            req = urllib.request.Request(
-                self.EVOLUTION_JSON_URL,
-                headers={'User-Agent': 'AppleDeveloperDocs/1.0'}
-            )
-            with urllib.request.urlopen(req, timeout=15) as response:
-                data = json.loads(response.read().decode('utf-8'))
-                self.cache = data
-                self.cache_time = time.time()
-                return data
-        except Exception:
-            return None
+        return fetch_json(self.EVOLUTION_JSON_URL)
 
 
 _api = SwiftEvolutionAPI()
@@ -64,9 +45,9 @@ def search_proposals(feature: str) -> Dict:
 
     if not data:
         return {
-            'error': 'Failed to fetch Swift Evolution data',
+            'error': 'fetch_failed',
+            'message': 'Could not fetch Swift Evolution data — check connectivity to download.swift.org',
             'feature': feature,
-            'suggestion': 'Check your internet connection'
         }
 
     proposals = data.get('proposals', [])
@@ -147,9 +128,9 @@ def get_proposal(se_number: str) -> Dict:
 
     if not data:
         return {
-            'error': 'Failed to fetch Swift Evolution data',
+            'error': 'fetch_failed',
+            'message': 'Could not fetch Swift Evolution data — check connectivity to download.swift.org',
             'se_number': se_number,
-            'suggestion': 'Check your internet connection'
         }
 
     # Normalize SE number
@@ -162,9 +143,9 @@ def get_proposal(se_number: str) -> Dict:
 
     if not proposal:
         return {
-            'error': f'Proposal {se_num} not found',
+            'error': 'proposal_not_found',
+            'message': f'Proposal {se_num} not found — browse all at https://www.swift.org/swift-evolution/',
             'se_number': se_num,
-            'suggestion': f'Visit https://www.swift.org/swift-evolution/ to browse proposals'
         }
 
     status = proposal.get('status', {})
@@ -236,14 +217,14 @@ def search_swift_forums(query: str, category: Optional[str] = None) -> Dict:
         req = urllib.request.Request(
             api_url,
             headers={
-                'User-Agent': 'AppleDeveloperDocs/1.0',
+                'User-Agent': UA_APP,
                 'Accept': 'application/json'
             }
         )
         with urllib.request.urlopen(req, timeout=15) as response:
             data = json.loads(response.read().decode('utf-8'))
     except Exception as e:
-        return {'error': str(e), 'query': query}
+        return {'error': 'fetch_failed', 'message': str(e), 'query': query}
 
     topics_raw = data.get('topics', [])
     posts_raw = data.get('posts', [])

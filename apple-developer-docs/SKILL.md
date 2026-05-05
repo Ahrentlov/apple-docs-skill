@@ -1,11 +1,11 @@
 ---
 name: apple-developer-docs
-description: "Execute Python code to query and filter Apple developer documentation (SwiftUI, UIKit, all frameworks), Apple's legacy Documentation Archive (Tech Notes, Sample Code, Guides), Swift Evolution proposals, Swift Forums discussions, WWDC session notes, Human Interface Guidelines, Apple/SwiftLang GitHub source code, and Swift compiler internals docs. TRIGGER when: user asks about Apple API docs, archived/legacy Apple docs, Swift proposals (SE-xxxx), Swift Forums, WWDC, HIG, Swift source code, or Swift compiler internals (SIL, IRGen, Sema, ABI, mangling). Examples: look up SwiftUI View, find async proposals, what changed in Swift 6, search WWDC for concurrency, check HIG navigation patterns, fetch Task.swift source, find archived Core Data sample code, read SIL ownership docs. Do NOT trigger for general Swift programming questions without documentation lookup."
+description: "Execute Python code to query and filter Apple developer documentation (SwiftUI, UIKit, all frameworks), Apple's legacy Documentation Archive (Tech Notes, Sample Code, Guides), Swift Evolution proposals, Swift Forums discussions, WWDC session notes (with searchable content), Human Interface Guidelines (with searchable content), Apple/SwiftLang GitHub source code, Swift compiler internals (with full-text search), and Xcode release notes. TRIGGER when: user asks about Apple API docs, archived/legacy Apple docs, Swift proposals (SE-xxxx), Swift Forums, WWDC sessions and notes, HIG topics, Swift source code, Swift compiler internals (SIL, IRGen, Sema, ABI), or Xcode release notes. Examples: look up SwiftUI View, find async proposals, what changed in Swift 6, fetch the actual notes for WWDC2023-10154, search HIG for buttons, find archived Core Data sample code, grep compiler docs for 'reborrow', what's new in Xcode 15.4. Do NOT trigger for general Swift programming questions without documentation lookup."
 license: MIT
 allowed-tools: "Bash(python3:*)"
 metadata:
   author: Patrick Ahrentløv
-  version: 1.3.0
+  version: 1.4.0
 ---
 
 # Apple Developer Docs
@@ -25,36 +25,43 @@ Output is JSON with `success`, `result`, `stdout`, `error`, and `execution_time_
 ## Available APIs
 
 ### Apple Documentation
-- `fetch_documentation(url)` - Fetch and parse Apple Developer documentation
+- `fetch_documentation(url)` - Fetch and parse any Apple Developer doc page (works for `/documentation/` AND `/design/human-interface-guidelines/` URLs — same DocC schema)
 - `search_apple_online_urls(query, platform=None)` - Generate search URLs
 - `get_framework_info(framework)` - Get framework documentation URL
 
 ### Swift Evolution & Forums
 - `search_proposals(feature)` - Search proposals by keyword, version, or status
 - `get_proposal(se_number)` - Get details of a specific proposal (SE-0413, 413, etc.)
-- `search_swift_forums_urls(query, category=None)` - Search Swift Forums (returns URLs only)
-- `search_swift_forums(query, category=None)` - Search Swift Forums (returns topics, posts, blurbs)
+- `search_swift_forums_urls(query, category=None)` - Search Swift Forums (URLs only)
+- `search_swift_forums(query, category=None)` - Search Swift Forums (topics, posts, blurbs)
 
 ### Swift Repositories
 - `search_swift_repos_urls(query)` - Search Apple/SwiftLang GitHub repos
-- `fetch_github_file(url)` - Fetch source code from GitHub (apple/swiftlang orgs only)
+- `fetch_github_file(url)` - Fetch source from GitHub (apple/swiftlang orgs only, 1 MB cap)
 
-### WWDC & Design
-- `search_wwdc_notes_urls(query)` - Search WWDC sessions
-- `get_wwdc_session(session_id)` - Get session URLs (format: wwdc2023-10154)
-- `search_hig_urls(query, platform=None)` - Search Human Interface Guidelines
-- `list_hig_platforms()` - List all HIG platforms
+### WWDC Sessions
+- `search_wwdc_sessions(query, year=None, limit=25)` - Search ~3000 sessions by title + description
+- `fetch_wwdc_session(session_id)` - Fetch the actual community-written notes (markdown). Format: `wwdc2023-10154`.
+- `search_wwdc_notes_urls(query)` / `get_wwdc_session(id)` - Legacy URL-only helpers
+
+### Human Interface Guidelines
+- `search_hig(query, platform=None, limit=25)` - Search HIG topics by title + abstract
+- `fetch_hig(topic)` - Fetch full HIG topic content by slug ('buttons') or title ('Dark Mode')
+- `search_hig_urls(query, platform=None)` / `list_hig_platforms()` - Legacy URL-only helpers
 
 ### Documentation Archive (legacy)
 - `search_archive(query, platform=None, framework=None, resource_type=None, topic=None, limit=25)` - Search ~5200 archived docs (Tech Notes, Tech Q&As, Sample Code, Guides, Release Notes)
-- `list_archive_frameworks()` - List frameworks available as filters
-- `list_archive_topics()` - List topic categories
-- `list_archive_resource_types()` - List resource types
+- `list_archive_frameworks()` / `list_archive_topics()` / `list_archive_resource_types()` - List filter values
 
 ### Swift Compiler Internals
-- `search_compiler_docs(query, limit=25)` - Search `swiftlang/swift/docs` (SIL, ABI, type checker, generics, ownership, etc.). Pair with `fetch_github_file`.
+- `search_compiler_docs(query, limit=25)` - Path-search `swiftlang/swift/docs` files
+- `search_compiler_docs_text(query, limit=10, max_files=30)` - Full-text grep inside compiler docs (returns matched lines with file path + line number)
 - `list_compiler_phases()` - List the compiler pipeline phases (Parse → Sema → SILGen → IRGen)
 - `get_compiler_phase(name)` - Get a specific phase (e.g. 'Parsing', 'IRGen', 'Sema')
+
+### Xcode Release Notes
+- `list_xcode_release_notes(major=None)` - List every Xcode release-notes page (optionally filter by major version)
+- `get_xcode_release_notes_url(version)` - Resolve a version like '15.4' to its release-notes URL. Pass to `fetch_documentation`.
 
 For full API signatures and return types, consult `references/api-reference.md`.
 
