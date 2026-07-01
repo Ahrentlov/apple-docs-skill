@@ -11,7 +11,7 @@ import urllib.parse
 import re
 from typing import Dict, Optional
 
-from ._utils import UA_APP
+from ._utils import UA_APP, require_string
 
 
 MAX_FILE_BYTES = 1_000_000
@@ -70,6 +70,8 @@ def search_swift_repos_urls(query: str) -> Dict:
     Returns:
         Dictionary with search URLs for different scopes
     """
+    err = require_string(query, 'query')
+    if err: return err
     encoded_query = urllib.parse.quote(query)
 
     return {
@@ -97,6 +99,8 @@ def fetch_github_file(url: str) -> Dict:
     Returns:
         Dictionary with file content and metadata, or error
     """
+    err = require_string(url, 'url')
+    if err: return err
     # Security: Only allow Apple's official organizations via proper URL parsing
     parsed = urllib.parse.urlparse(url)
     if parsed.hostname not in ('github.com', 'raw.githubusercontent.com'):

@@ -29,7 +29,7 @@ import time
 import threading
 import queue
 from typing import Dict, Any, Optional, Callable
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 from security import CodeValidator, ValidationResult
@@ -53,9 +53,14 @@ class ExecutionResult:
             self.validation_warnings = []
 
     def to_dict(self) -> Dict:
-        """Convert to dictionary for MCP response."""
-        d = asdict(self)
-        # Remove None values for cleaner output
+        """Convert to a JSON-serializable dict for the run.py output envelope.
+
+        Builds the dict shallowly via dataclasses.fields (not asdict, which
+        would recurse into deeply-nested user `result` data and overflow the
+        parent's recursion limit). Iterating fields keeps this in sync with the
+        dataclass automatically — no hand-maintained field list to drift.
+        """
+        d = {f.name: getattr(self, f.name) for f in fields(self)}
         return {k: v for k, v in d.items() if v is not None and v != [] and v != ""}
 
 
@@ -95,6 +100,9 @@ ALLOWED_BUILTINS = {{
     'str': str, 'int': int, 'float': float, 'bool': bool, 'bytes': bytes,
     'isinstance': isinstance, 'type': type,
     'print': print, 'repr': repr,
+    'Exception': Exception, 'ValueError': ValueError, 'KeyError': KeyError,
+    'TypeError': TypeError, 'IndexError': IndexError, 'AttributeError': AttributeError,
+    'RuntimeError': RuntimeError, 'ZeroDivisionError': ZeroDivisionError,
     'True': True, 'False': False, 'None': None,
 }}
 
@@ -130,9 +138,9 @@ def search_swift_forums_urls(query, category=None):
     """Search Swift Forums - returns URLs only."""
     return _make_api_call("search_swift_forums_urls", query, category)
 
-def search_swift_forums(query, category=None):
+def search_swift_forums(query, category=None, limit=20):
     """Search Swift Forums - returns topics and posts."""
-    return _make_api_call("search_swift_forums", query, category)
+    return _make_api_call("search_swift_forums", query, category, limit)
 
 
 def search_apple_online_urls(query, platform=None):
@@ -150,22 +158,6 @@ def search_swift_repos_urls(query):
 def fetch_github_file(url):
     """Fetch source code from GitHub."""
     return _make_api_call("fetch_github_file", url)
-
-def search_wwdc_notes_urls(query):
-    """Generate search URLs for WWDC sessions."""
-    return _make_api_call("search_wwdc_notes_urls", query)
-
-def get_wwdc_session(session_id):
-    """Get WWDC session URLs."""
-    return _make_api_call("get_wwdc_session", session_id)
-
-def search_hig_urls(query, platform=None):
-    """Generate search URLs for Human Interface Guidelines."""
-    return _make_api_call("search_hig_urls", query, platform)
-
-def list_hig_platforms():
-    """List all HIG platforms."""
-    return _make_api_call("list_hig_platforms")
 
 def search_archive(query, platform=None, framework=None, resource_type=None, topic=None, limit=25):
     """Search Apple's Documentation Archive (legacy library/archive)."""
@@ -187,7 +179,7 @@ def search_compiler_docs(query, limit=25):
     """Search Swift compiler docs in swiftlang/swift/docs."""
     return _make_api_call("search_compiler_docs", query, limit)
 
-def search_compiler_docs_text(query, limit=10, max_files=30):
+def search_compiler_docs_text(query, limit=10, max_files=60):
     """Full-text grep across Swift compiler doc files."""
     return _make_api_call("search_compiler_docs_text", query, limit, max_files)
 
@@ -235,10 +227,6 @@ namespace['search_apple_online_urls'] = search_apple_online_urls
 namespace['get_framework_info'] = get_framework_info
 namespace['search_swift_repos_urls'] = search_swift_repos_urls
 namespace['fetch_github_file'] = fetch_github_file
-namespace['search_wwdc_notes_urls'] = search_wwdc_notes_urls
-namespace['get_wwdc_session'] = get_wwdc_session
-namespace['search_hig_urls'] = search_hig_urls
-namespace['list_hig_platforms'] = list_hig_platforms
 
 namespace['search_archive'] = search_archive
 namespace['list_archive_frameworks'] = list_archive_frameworks
@@ -300,7 +288,6 @@ sys.stdout.flush()
         self,
         timeout: int = 5,
         max_memory_mb: int = 50,
-        max_output_bytes: int = 10 * 1024,
         python_path: Optional[str] = None,
         api_handlers: Optional[Dict[str, Callable]] = None
     ):
@@ -310,13 +297,11 @@ sys.stdout.flush()
         Args:
             timeout: Maximum execution time in seconds
             max_memory_mb: Maximum memory usage in MB
-            max_output_bytes: Maximum output size in bytes
             python_path: Path to Python interpreter
             api_handlers: Dict mapping function names to handler callables
         """
         self.timeout = timeout
         self.max_memory_mb = max_memory_mb
-        self.max_output_bytes = max_output_bytes
         self.python_path = python_path or sys.executable
         self.validator = CodeValidator()
         self.api_handlers = api_handlers or {}

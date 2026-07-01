@@ -7,24 +7,21 @@ JSON schema Apple uses for `/documentation/` — `fetch_documentation` does the
 heavy lifting; this module adds discovery and a topic index.
 """
 
-import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 
-from ._utils import all_terms_match, fetch_json
+from ._utils import all_terms_match, clamp_limit, fetch_json, require_string
 from .apple_docs import fetch_documentation
 
 
-PLATFORMS = ["ios", "macos", "tvos", "watchos", "visionos"]
-PLATFORM_NAMES = {
-    "ios": "iOS", "macos": "macOS", "tvos": "tvOS",
-    "watchos": "watchOS", "visionos": "visionOS",
-}
-
-BASE_URL = "https://developer.apple.com/design/human-interface-guidelines"
 DOCC_BASE = "https://developer.apple.com/tutorials/data/design/human-interface-guidelines"
 
 # Top-level HIG categories — Apple keeps these stable; cheaper than discovering them.
 ROOT_CATEGORIES = ("getting-started", "foundations", "patterns", "components", "inputs", "technologies")
+
+# Built index is memoized for the process lifetime so search_hig + fetch_hig in
+# one script don't each pay the full ~40-fetch walk.
+_topic_index_cache: Optional[List[Dict]] = None
 
 def _fetch_node(slug: str) -> Optional[Dict]:
     return fetch_json(f"{DOCC_BASE}/{slug}.json")
@@ -49,23 +46,41 @@ def _build_topic_index() -> List[Dict]:
     BFS to depth 2 across the HIG tree (root → category → sub-page → topic).
     Collects every reachable page so callers can search both container titles
     ('Menus and actions') and leaf titles ('Buttons').
+
+    Each BFS level is fetched concurrently so the ~40-page walk stays well under
+    the sandbox timeout. The result is memoized for the process lifetime.
     """
+    global _topic_index_cache
+    if _topic_index_cache is not None:
+        return _topic_index_cache
+
     topics: List[Dict] = []
     seen_slugs: set = set()
-    for category in ROOT_CATEGORIES:
-        root_data = _fetch_node(category)
-        if not root_data:
-            continue
-        category_title = root_data.get('metadata', {}).get('title', category)
-        for slug, title, url, abstract in _iter_child_refs(root_data):
-            if slug in seen_slugs:
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        # Level 1: fetch all root categories at once.
+        root_data_by_category = dict(zip(ROOT_CATEGORIES, pool.map(_fetch_node, ROOT_CATEGORIES)))
+
+        # Record each category's direct children, queueing their slugs to expand.
+        children_to_expand: List[tuple] = []  # (slug, category_title)
+        for category, root_data in root_data_by_category.items():
+            if not root_data:
                 continue
-            seen_slugs.add(slug)
-            topics.append({
-                "title": title, "slug": slug, "category": category_title,
-                "url": url, "abstract": abstract,
-            })
-            child_data = _fetch_node(slug)
+            category_title = root_data.get('metadata', {}).get('title', category)
+            for slug, title, url, abstract in _iter_child_refs(root_data):
+                if slug in seen_slugs:
+                    continue
+                seen_slugs.add(slug)
+                topics.append({
+                    "title": title, "slug": slug, "category": category_title,
+                    "url": url, "abstract": abstract,
+                })
+                children_to_expand.append((slug, category_title))
+
+        # Level 2: fetch every discovered child page at once.
+        child_slugs = [slug for slug, _ in children_to_expand]
+        child_data_list = list(pool.map(_fetch_node, child_slugs))
+        for (_, category_title), child_data in zip(children_to_expand, child_data_list):
             if not child_data:
                 continue
             for c_slug, c_title, c_url, c_abstract in _iter_child_refs(child_data):
@@ -76,6 +91,9 @@ def _build_topic_index() -> List[Dict]:
                     "title": c_title, "slug": c_slug, "category": category_title,
                     "url": c_url, "abstract": c_abstract,
                 })
+
+    if topics:  # only cache a real index, so a transient failure can retry
+        _topic_index_cache = topics
     return topics
 
 
@@ -99,6 +117,8 @@ def search_hig(query: str, platform: Optional[str] = None, limit: int = 25) -> D
         {"query": str, "platform": str|None, "total_matches": int, "returned": int,
          "results": [{title, slug, category, url, abstract}, ...]}
     """
+    err = require_string(query, 'query')
+    if err: return err
     topics = _build_topic_index()
     if not topics:
         return {
@@ -106,8 +126,8 @@ def search_hig(query: str, platform: Optional[str] = None, limit: int = 25) -> D
             "message": "Could not build HIG topic index — check connectivity to developer.apple.com",
         }
 
-    limit = max(0, limit)
-    terms = [t.lower() for t in (query or "").split() if t]
+    limit = clamp_limit(limit)
+    terms = [t.lower() for t in query.split() if t]
 
     matches: List[Dict] = []
     for topic in topics:
@@ -138,9 +158,13 @@ def fetch_hig(topic: str) -> Dict:
         discussion, parameters, returns, content_sections, etc.
         Or {error, candidates} when ambiguous, {error, message} when missing.
     """
-    needle = (topic or '').lower().strip()
+    err = require_string(topic, 'topic')
+    if err: return err
+    needle = topic.lower().strip()
     if not needle:
         return {"error": "empty_topic", "message": "Pass a HIG topic slug or title"}
+    if len(needle) > 200 or '/' in needle or '\x00' in needle:
+        return {"error": "invalid_topic", "message": "Topic must be a single slug or title (no slashes, ≤200 chars)"}
 
     # Fast path: when the input looks like a slug, try the URL directly
     # (~1 fetch instead of the ~36-fetch index walk).
@@ -173,37 +197,3 @@ def fetch_hig(topic: str) -> Dict:
     return fetch_documentation(matches[0]['url'])
 
 
-# --- legacy URL-only helpers, retained for backwards compatibility ---
-
-def search_hig_urls(query: str, platform: Optional[str] = None) -> Dict:
-    """
-    Generate search URLs for HIG. Prefer `search_hig` for structured results;
-    this remains for callers that just want a search link.
-    """
-    encoded_query = urllib.parse.quote(query)
-    results = {
-        "query": query,
-        "platform": platform,
-        "base_url": BASE_URL,
-        "search_url": f"https://www.google.com/search?q=site:developer.apple.com/design/human-interface-guidelines+{encoded_query}",
-        "direct_link": BASE_URL,
-    }
-    if platform and platform.lower() in PLATFORMS:
-        platform_lower = platform.lower()
-        results["platform_url"] = f"{BASE_URL}/platforms/{platform_lower}"
-        results["platform_search"] = (
-            f"https://www.google.com/search?q=site:developer.apple.com/design/human-interface-guidelines+{platform_lower}+{encoded_query}"
-        )
-    return results
-
-
-def list_hig_platforms() -> List[Dict]:
-    """List all supported Apple platforms with HIG links."""
-    return [
-        {
-            "platform": platform,
-            "name": PLATFORM_NAMES.get(platform, platform),
-            "url": f"{BASE_URL}/platforms/{platform}"
-        }
-        for platform in PLATFORMS
-    ]

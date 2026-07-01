@@ -8,7 +8,7 @@ read a specific release-notes page — this module provides discovery only.
 
 from typing import Dict, List, Optional
 
-from ._utils import fetch_json
+from ._utils import fetch_json, require_string
 
 
 INDEX_URL = "https://developer.apple.com/tutorials/data/documentation/xcode-release-notes.json"
@@ -55,7 +55,7 @@ def list_xcode_release_notes(major: Optional[str] = None) -> Dict:
         }
     releases = _flatten_releases(data)
     if major:
-        needle = major.lower()
+        needle = str(major).lower()  # tolerate int input, e.g. major=15
         releases = [r for r in releases if needle in r['major'].lower()]
     return {"count": len(releases), "releases": releases}
 
@@ -72,15 +72,17 @@ def get_xcode_release_notes_url(version: str) -> Dict:
         {version, major, url} on a unique match, or {error, candidates} when
         ambiguous, or {error, available_count} when no match.
     """
+    err = require_string(version, 'version')
+    if err: return err
+    needle = version.lower().strip()
+    if not needle:
+        return {"error": "empty_version", "message": "Pass a version like '15.4' or '16.3'"}
     data = _fetch_index()
     if not data:
         return {
             "error": "fetch_failed",
             "message": "Could not fetch the Xcode release-notes index from developer.apple.com",
         }
-    needle = (version or '').lower().strip()
-    if not needle:
-        return {"error": "empty_version", "message": "Pass a version like '15.4' or '16.3'"}
     releases = _flatten_releases(data)
     matches = [r for r in releases if needle in r['version'].lower()]
     if not matches:
@@ -92,6 +94,7 @@ def get_xcode_release_notes_url(version: str) -> Dict:
     if len(matches) > 1:
         return {
             "error": "ambiguous_version",
+            "message": f"'{version}' matches {len(matches)} releases — pass a more specific version",
             "candidates": [{"version": m['version'], "url": m['url']} for m in matches[:10]],
         }
     return matches[0]

@@ -12,7 +12,7 @@ import urllib.parse
 import urllib.error
 from typing import Dict, Optional
 
-from ._utils import UA_APPLE_BROWSER
+from ._utils import UA_APPLE_BROWSER, require_string
 
 
 class AppleDocsAPI:
@@ -207,7 +207,10 @@ class AppleDocsAPI:
             group = section.get("title", "")
             for ref_id in section.get("identifiers", []):
                 ref = references.get(ref_id, {})
-                if ref.get("kind") != "symbol":
+                # Symbols (members) have kind="symbol"; framework / index pages
+                # link children with kind="article" — keep both so framework root
+                # pages enumerate their topics.
+                if ref.get("kind") not in ("symbol", "article"):
                     continue
                 fragments = ref.get("fragments", [])
                 declaration = "".join(f.get("text", "") for f in fragments)
@@ -272,6 +275,7 @@ def fetch_documentation(url: str) -> Dict:
     same DocC JSON schema).
 
     On failure, returns a dict with an ``error`` key identifying the cause:
+      * ``invalid_input`` — `url` was not a string
       * ``invalid_url`` — URL doesn't match an accepted developer.apple.com prefix
       * ``not_found``  — page doesn't exist (HTTP 404)
       * ``http_error`` — other HTTP status (includes ``status`` field)
@@ -279,11 +283,18 @@ def fetch_documentation(url: str) -> Dict:
       * ``network_error`` — DNS/connection/reset/SSL failure (includes ``reason`` field)
       * ``invalid_json`` — response wasn't valid JSON
     """
+    err = require_string(url, 'url')
+    if err: return err
+
+    # Drop fragment + query before path extraction; both 404 the JSON endpoint.
+    parsed = urllib.parse.urlsplit(url)
+    clean_url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, '', ''))
+
     json_path_prefix: Optional[str] = None
     path: Optional[str] = None
     for prefix, splitter, json_segment in _DOC_URL_PREFIXES:
-        if url.startswith(prefix):
-            path = url.split(splitter, 1)[1].rstrip('/')
+        if clean_url.startswith(prefix):
+            path = clean_url.split(splitter, 1)[1].rstrip('/')
             json_path_prefix = json_segment
             break
 
@@ -318,6 +329,8 @@ def fetch_documentation(url: str) -> Dict:
 
 def search_apple_online_urls(query: str, platform: Optional[str] = None) -> Dict:
     """Generate search URLs for Apple documentation."""
+    err = require_string(query, 'query')
+    if err: return err
     encoded_query = urllib.parse.quote(query)
     result = {
         "query": query,
@@ -333,6 +346,8 @@ def search_apple_online_urls(query: str, platform: Optional[str] = None) -> Dict
 
 def get_framework_info(framework: str) -> Dict:
     """Get documentation URL for a framework."""
+    err = require_string(framework, 'framework')
+    if err: return err
     framework_path = framework.lower().replace(" ", "").replace("-", "")
     return {
         "name": framework,

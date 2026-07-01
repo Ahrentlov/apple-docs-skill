@@ -47,9 +47,11 @@ The sandbox filters API responses before they enter context. Across all tools:
 
 | API | Typical reduction |
 |-----|-------------------|
-| `fetch_documentation` | 97% — SwiftUI View: 94KB → 1.7KB |
+| `fetch_documentation` / `fetch_hig` | 97% — SwiftUI View: 94KB → 1.7KB |
+| `search_wwdc_sessions` | 95% — ~3000 sessions filtered to title + description matches |
 | `search_swift_forums` | 95% — 50 topics down to top 5 with key fields |
 | `search_proposals` | 92% — dozens of proposals to title/status/SE number |
+| `search_compiler_docs_text` | 90% — full file content reduced to matched lines |
 | `fetch_github_file` | 74–90% — full source to first 30 lines |
 | `get_proposal` | 73% — full metadata to summary fields |
 
@@ -81,8 +83,16 @@ apple-developer-docs/
 │       ├── hig.py                # HIG search + topic fetch
 │       └── xcode_releases.py     # Xcode release-notes index
 └── references/
-    ├── api-reference.md  # Full API signatures and return types
-    └── security.md       # Sandbox security model
+    ├── apple-docs.md      # fetch_documentation + Apple-docs URL helpers
+    ├── archive.md         # Documentation Archive search
+    ├── compiler.md        # Swift compiler internals (path + full-text)
+    ├── hig.md             # Human Interface Guidelines
+    ├── sandbox.md         # Sandbox model + allowed builtins
+    ├── security.md        # AST validation + threat model
+    ├── swift-evolution.md # Proposals + Forums
+    ├── swift-repos.md     # Apple/SwiftLang GitHub source fetch
+    ├── wwdc.md            # WWDC sessions + community notes
+    └── xcode-releases.md  # Xcode release-notes index
 ```
 
 ## Known Limitations

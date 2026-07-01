@@ -9,11 +9,10 @@ Backed by the `wwdcnotes/wwdcnotes` GitHub repo:
 - `Sources/WWDCNotes/WWDCNotes.docc/WWDC{YY}/WWDC{YY}-{number}-{slug}.md` — note content.
 """
 
-import urllib.parse
 import urllib.request
 from typing import Dict, List, Optional
 
-from ._utils import UA_APP, all_terms_match, fetch_json
+from ._utils import UA_APP, all_terms_match, clamp_limit, fetch_json, require_string
 
 
 SESSIONS_JSON_URL = "https://raw.githubusercontent.com/wwdcnotes/wwdcnotes/main/Sources/Sessions/sessions.json"
@@ -65,6 +64,9 @@ def search_wwdc_sessions(query: str, year: Optional[int] = None, limit: int = 25
         {"query": str, "year": int|None, "total_matches": int, "returned": int,
          "results": [{id, title, year, code, description, permalink}, ...]}
     """
+    err = require_string(query, 'query')
+    if err: return err
+
     sessions = _fetch_sessions()
     if not sessions:
         return {
@@ -72,11 +74,18 @@ def search_wwdc_sessions(query: str, year: Optional[int] = None, limit: int = 25
             "message": "Could not fetch the WWDC sessions index from wwdcnotes",
         }
 
-    limit = max(0, limit)
-    terms = [t.lower() for t in (query or "").split() if t]
+    limit = clamp_limit(limit)
+    terms = [t.lower() for t in query.split() if t]
     year_match: Optional[int] = None
     if year is not None:
-        year_match = int(year) if int(year) > 99 else 2000 + int(year)
+        try:
+            y = int(year)
+        except (TypeError, ValueError):
+            return {
+                "error": "invalid_argument",
+                "message": f"`year` must be an integer (e.g. 2023 or 23); got {year!r}",
+            }
+        year_match = y if y > 99 else 2000 + y
 
     matches: List[Dict] = []
     for sid, entry in sessions.items():
@@ -122,6 +131,8 @@ def fetch_wwdc_session(session_id: str) -> Dict:
         {error: 'session_not_found', message, permalink}            — folder exists but no file matches
         {error: 'fetch_failed', message, url}                       — network / decode error
     """
+    err = require_string(session_id, 'session_id')
+    if err: return err
     parts = _parse_session_id(session_id)
     if not parts:
         return {"error": "invalid_session_id", "message": "Use format wwdc2023-10154"}
@@ -130,7 +141,7 @@ def fetch_wwdc_session(session_id: str) -> Dict:
     if listing is None:
         return {
             "error": "year_not_indexed",
-            "message": f"No directory listing for WWDC{parts['two_year']} (year may not exist on wwdcnotes).",
+            "message": f"wwdcnotes has no notes folder for WWDC {parts['four_year']} (looked up WWDC{parts['two_year']}/)",
         }
 
     prefix = f"WWDC{parts['two_year']}-{parts['number']}-"
@@ -165,44 +176,3 @@ def fetch_wwdc_session(session_id: str) -> Dict:
     }
 
 
-# --- legacy URL-only helpers, retained for backwards compatibility ---
-
-def search_wwdc_notes_urls(query: str) -> Dict:
-    """
-    Generate search URLs for WWDC sessions. Prefer `search_wwdc_sessions` for
-    structured results — this remains for callers that just want a search link.
-    """
-    encoded_query = urllib.parse.quote(query)
-    query_lower = query.lower()
-    result = {
-        "query": query,
-        "search_urls": {
-            "wwdcnotes": f"https://wwdcnotes.com/search?q={encoded_query}",
-            "apple_videos": f"https://developer.apple.com/search/?q={encoded_query}&type=Videos",
-        }
-    }
-    if any(word in query_lower for word in ("performance", "optimize", "fast", "memory")):
-        result["tip"] = "WWDC has extensive performance sessions not found in regular docs"
-        result["categories"] = ["Instruments", "App Performance", "Memory Management"]
-    elif "swiftui" in query_lower:
-        result["categories"] = ["SwiftUI Essentials", "SwiftUI Layout", "SwiftUI Animation"]
-    elif "swift" in query_lower:
-        result["categories"] = ["What's New in Swift", "Swift Concurrency"]
-    return result
-
-
-def get_wwdc_session(session_id: str) -> Dict:
-    """
-    Get URLs for a WWDC session by ID. Prefer `fetch_wwdc_session` for actual
-    note content — this remains for callers that just want links.
-    """
-    parts = _parse_session_id(session_id)
-    if not parts:
-        return {"error": "invalid_session_id", "message": "Use format wwdc2023-10154"}
-    return {
-        "session_id": f"wwdc{parts['four_year']}-{parts['number']}",
-        "urls": {
-            "wwdcnotes": f"https://wwdcnotes.com/notes/wwdc{parts['four_year']}/{parts['number']}",
-            "apple_video": f"https://developer.apple.com/videos/play/wwdc{parts['four_year']}/{parts['number']}/",
-        }
-    }

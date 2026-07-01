@@ -14,7 +14,7 @@ import json
 import re
 from typing import Dict, List, Optional
 
-from ._utils import UA_APPLE_BROWSER, all_terms_match, fetch_json
+from ._utils import UA_APPLE_BROWSER, all_terms_match, clamp_limit, fetch_json, require_string
 
 
 ARCHIVE_BASE = "https://developer.apple.com/library/archive"
@@ -106,8 +106,9 @@ def search_archive(
         platform: Optional filter: 'iOS', 'macOS', 'tvOS', 'watchOS', 'Safari', 'Xcode Developer Tools', etc.
                   Matches when the platform string contains this value.
         framework: Optional framework/technology name (e.g., 'UIKit', 'Core Data', 'WebKit').
-        resource_type: Optional type filter: 'Technical Note', 'Technical Q&A', 'Sample Code',
-                       'Guide', 'Release Notes', 'Article', 'Getting Started', 'Xcode Tasks'.
+        resource_type: Optional type filter: 'Technical Notes', 'Technical Q&As', 'Sample Code',
+                       'Guides', 'Release Notes', 'Articles', 'Getting Started', 'Xcode Tasks'.
+                       Use list_archive_resource_types() for the canonical list.
         topic: Optional topic category (e.g., 'Audio', 'Networking', 'Graphics & Animation').
         limit: Max results to return (default 25).
 
@@ -115,6 +116,9 @@ def search_archive(
         {"query": str, "total_matches": int, "returned": int, "results": [doc, ...]}
         Each doc: {name, id, resource_type, topic, framework, platform, date, url}
     """
+    err = require_string(query, 'query')
+    if err: return err
+
     data = _api._fetch_library()
     if not data:
         return {
@@ -122,16 +126,17 @@ def search_archive(
             "message": "Could not fetch library.json — check connectivity to developer.apple.com",
         }
 
-    limit = max(0, limit)
+    limit = clamp_limit(limit)
     maps = _api._build_maps(data)
     name_col = COLUMNS["name"]
     doc_names = [html.unescape(row[name_col] or "") for row in data.get('documents', [])]
-    terms = [t.lower() for t in (query or "").split() if t]
+    terms = [t.lower() for t in query.split() if t]
 
-    platform_lc = platform.lower() if platform else None
-    framework_lc = framework.lower() if framework else None
-    rt_lc = resource_type.lower() if resource_type else None
-    topic_lc = topic.lower() if topic else None
+    # str(...) so a non-string filter (e.g. an int) is tolerated, not a crash.
+    platform_lc = str(platform).lower() if platform else None
+    framework_lc = str(framework).lower() if framework else None
+    rt_lc = str(resource_type).lower() if resource_type else None
+    topic_lc = str(topic).lower() if topic else None
 
     type_col = COLUMNS["type"]
     topic_col = COLUMNS["topic"]

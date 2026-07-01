@@ -34,11 +34,9 @@ Swift Repositories
 WWDC Sessions
 - search_wwdc_sessions(query, year?, limit?)  - Search ~3000 sessions
 - fetch_wwdc_session(session_id)              - Fetch the actual community-written notes
-- search_wwdc_notes_urls / get_wwdc_session   - Legacy URL-only helpers
 
 Human Interface Guidelines
 - search_hig(query, platform?, limit?) / fetch_hig(topic)
-- search_hig_urls / list_hig_platforms        - Legacy URL-only helpers
 
 Documentation Archive
 - search_archive(query, platform?, framework?, resource_type?, topic?, limit?)
