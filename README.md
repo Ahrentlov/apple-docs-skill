@@ -63,6 +63,28 @@ This skill adapts the [code execution architecture](https://www.anthropic.com/en
 
 This matters most for data-heavy APIs — Apple documentation pages, 500+ Swift Evolution proposals, forum threads, and GitHub source files can be large. Running queries and filtering in the sandbox means only the relevant fields come back. Combining multiple queries in a single execution also cuts down on round trips.
 
+## Security model
+
+Security scanners will flag this skill for code execution and network access. Both are its purpose, not an accident: the skill exists to run generated Python and fetch remote documentation.
+
+### Why sandbox agent-written code at all?
+
+An agent running this skill typically has shell access already, so the sandbox is not about protecting the machine from the agent in general. It exists for three specific reasons:
+
+1. **It makes the skill safe to auto-approve.** Users allowlist `run.py` invocations once. Without the sandbox, that grant would mean "arbitrary Python with my full user privileges". With it, the same grant means "query documentation APIs and compute over the results", and nothing else.
+2. **It contains indirect prompt injection.** The skill ingests untrusted text (user-generated forum posts, community notes, fetched source). If that content ever steered the generated code, sandboxed code still cannot read local files, reach non-documentation hosts, or spawn processes. The blast radius of a poisoned lookup stays inside the sandbox.
+3. **It keeps the skill auditable.** Reviewers and automated scanners can verify a small, explicit boundary (one entry point, one allowlist, fixed egress) instead of reasoning about arbitrary code.
+
+### The layers
+
+- **Subprocess isolation** is the primary boundary. Generated code never runs in the parent process. It runs in a separate Python process with CPU-time and memory limits (`resource.setrlimit`) and a hard timeout.
+- **AST validation** (defense-in-depth) rejects code before it runs: no imports, no `exec`/`eval`/`open`/`getattr`, no dunder access, no `os`/`sys`/`subprocess`.
+- **Restricted builtins**: the sandbox namespace exposes only a small allowlist (`len`, `sorted`, type constructors, and similar) plus the documented API functions. All I/O goes through an IPC bridge to the parent; the sandbox itself has no file or socket access.
+- **Constrained egress**: network requests go only to fixed documentation hosts (developer.apple.com, swift.org, forums.swift.org, GitHub), and GitHub fetches are restricted to the `apple` and `swiftlang` organizations with a 1 MB size cap.
+- **Third-party content is labeled**: API results carrying external text include a `content_notice`, and large blobs (GitHub files, WWDC notes) are wrapped in explicit `BEGIN/END EXTERNAL CONTENT` boundary markers, so a consuming agent can distinguish quoted untrusted text (including user-generated forum posts) from the skill's own output and ignore instructions embedded in it.
+
+Full details on the threat model, allowed builtins, IPC protocol, and content-boundary mechanics are in [`references/security.md`](apple-developer-docs/references/security.md) and [`references/sandbox.md`](apple-developer-docs/references/sandbox.md).
+
 ## Structure
 
 ```
@@ -73,7 +95,7 @@ apple-developer-docs/
 │   ├── sandbox.py        # Sandboxed execution environment
 │   ├── security.py       # AST-based code validation
 │   └── apis/             # API implementations
-│       ├── _utils.py             # Shared fetch+cache helpers (memory + disk)
+│       ├── _utils.py             # Shared fetch helpers + third-party content marking
 │       ├── apple_docs.py
 │       ├── archive.py            # Documentation Archive
 │       ├── swift_evolution.py    # Proposals + Forums

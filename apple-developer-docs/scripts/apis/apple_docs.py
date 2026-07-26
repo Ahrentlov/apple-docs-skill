@@ -12,7 +12,7 @@ import urllib.parse
 import urllib.error
 from typing import Dict, Optional
 
-from ._utils import UA_APPLE_BROWSER, require_string
+from ._utils import UA_APPLE_BROWSER, mark_untrusted, require_string
 
 
 class AppleDocsAPI:
@@ -324,7 +324,7 @@ def fetch_documentation(url: str) -> Dict:
     parsed = _api._parse_documentation_json(data)
     parsed["url"] = url
     parsed["json_url"] = json_url
-    return parsed
+    return mark_untrusted(parsed, "developer.apple.com")
 
 
 def search_apple_online_urls(query: str, platform: Optional[str] = None) -> Dict:

@@ -13,7 +13,7 @@ import urllib.parse
 import json
 from typing import Dict, Optional, List
 
-from ._utils import UA_APP, clamp_limit, fetch_json, require_string
+from ._utils import UA_APP, clamp_limit, fetch_json, mark_untrusted, require_string
 
 
 class SwiftEvolutionAPI:
@@ -289,7 +289,9 @@ def search_swift_forums(query: str, category: Optional[str] = None, limit: int =
             post['post_url'] = f"https://forums.swift.org/t/{slug}/{tid}/{post_number}"
         posts.append(post)
 
-    return {
+    # Forum posts are arbitrary user-generated text, the highest-risk source
+    # this skill returns. Blurbs, titles, tags, and usernames are all untrusted.
+    return mark_untrusted({
         'query': query,
         'category': category,
         'total_topics': len(topics_raw),
@@ -298,4 +300,4 @@ def search_swift_forums(query: str, category: Optional[str] = None, limit: int =
         'returned_posts': len(posts),
         'topics': topics,
         'posts': posts,
-    }
+    }, "forums.swift.org (user-generated posts)")

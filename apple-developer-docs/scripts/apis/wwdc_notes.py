@@ -12,7 +12,7 @@ Backed by the `wwdcnotes/wwdcnotes` GitHub repo:
 import urllib.request
 from typing import Dict, List, Optional
 
-from ._utils import UA_APP, all_terms_match, clamp_limit, fetch_json, require_string
+from ._utils import UA_APP, all_terms_match, clamp_limit, fetch_json, mark_untrusted, require_string
 
 
 SESSIONS_JSON_URL = "https://raw.githubusercontent.com/wwdcnotes/wwdcnotes/main/Sources/Sessions/sessions.json"
@@ -165,7 +165,7 @@ def fetch_wwdc_session(session_id: str) -> Dict:
     canonical_id = f"wwdc{parts['four_year']}-{parts['number']}"
     meta = sessions.get(canonical_id, {})
 
-    return {
+    return mark_untrusted({
         "id": canonical_id,
         "title": meta.get('title', ''),
         "year": meta.get('year'),
@@ -173,6 +173,6 @@ def fetch_wwdc_session(session_id: str) -> Dict:
         "content": content,
         "source_url": raw_url,
         "permalink": meta.get('permalink') or f"https://wwdcnotes.com/notes/wwdc{parts['four_year']}/{parts['number']}",
-    }
+    }, "wwdcnotes.com (community-written notes)", wrap_field="content")
 
 

@@ -12,7 +12,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 
-from ._utils import UA_APP, all_terms_match, clamp_limit, fetch_json, require_string
+from ._utils import UA_APP, all_terms_match, clamp_limit, fetch_json, mark_untrusted, require_string
 
 # Upper bound for full-text candidate files; set above the corpus size so the
 # `truncated` hint to raise max_files stays actionable rather than a false ceiling.
@@ -220,14 +220,14 @@ def search_compiler_docs_text(query: str, limit: int = 10, max_files: int = 60) 
             if len(results) >= limit:
                 break
 
-    return {
+    return mark_untrusted({
         "query": query,
         "files_searched": files_searched,
         "candidate_files": candidate_count,
         "truncated": truncated,
         "matches_returned": len(results),
         "results": results,
-    }
+    }, "github.com/swiftlang/swift docs")
 
 
 def list_compiler_phases() -> Dict:

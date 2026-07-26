@@ -11,7 +11,7 @@ import urllib.parse
 import re
 from typing import Dict, Optional
 
-from ._utils import UA_APP, require_string
+from ._utils import UA_APP, mark_untrusted, require_string
 
 
 MAX_FILE_BYTES = 1_000_000
@@ -156,16 +156,17 @@ def fetch_github_file(url: str) -> Dict:
                     "url": url,
                 }
             content = raw_bytes.decode('utf-8', errors='replace')
-            return {
+            repo = f"{repo_info['org']}/{repo_info['repo']}"
+            return mark_untrusted({
                 "content": content,
                 "url": url,
                 "raw_url": raw_url,
                 "language": _api._detect_language(repo_info['path']),
-                "repo": f"{repo_info['org']}/{repo_info['repo']}",
+                "repo": repo,
                 "path": repo_info['path'],
                 "size": len(content),
                 "lines": content.count('\n') + 1
-            }
+            }, f"github.com/{repo}", wrap_field="content")
 
     except urllib.error.HTTPError as e:
         return {"error": "http_error", "status": e.code, "message": str(e.reason), "url": url}
