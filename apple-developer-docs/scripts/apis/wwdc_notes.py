@@ -5,14 +5,15 @@ WWDC Notes API
 Search Apple's WWDC sessions and fetch community-written notes.
 
 Backed by the `wwdcnotes/wwdcnotes` GitHub repo:
-- `Sources/Sessions/sessions.json` — metadata for every session ever (3000+).
+- `Sources/Sessions/sessions.json` — community-maintained session metadata.
 - `Sources/WWDCNotes/WWDCNotes.docc/WWDC{YY}/WWDC{YY}-{number}-{slug}.md` — note content.
 """
 
 import urllib.request
+import re
 from typing import Dict, List, Optional
 
-from ._utils import UA_APP, all_terms_match, clamp_limit, fetch_json, mark_untrusted, require_string
+from ._utils import open_url, read_bounded, UA_APP, all_terms_match, clamp_limit, fetch_json, mark_untrusted, require_string
 
 
 SESSIONS_JSON_URL = "https://raw.githubusercontent.com/wwdcnotes/wwdcnotes/main/Sources/Sessions/sessions.json"
@@ -26,17 +27,11 @@ def _fetch_sessions() -> Optional[Dict]:
 
 def _parse_session_id(session_id: str) -> Optional[Dict]:
     """Normalize 'wwdc2023-10154' / 'wwdc2023/10154' → {'four_year', 'two_year', 'number'}."""
-    parts = session_id.lower().replace("/", "-").split("-")
-    if len(parts) < 2 or "wwdc" not in parts[0]:
+    match = re.fullmatch(r"wwdc(20[0-9]{2}|[0-9]{2})[-/]([0-9]{1,6})", session_id.strip().lower())
+    if not match:
         return None
-    year = parts[0].replace("wwdc", "")
-    if len(year) == 4:
-        four_year, two_year = year, year[2:]
-    elif len(year) == 2:
-        four_year, two_year = "20" + year, year
-    else:
-        return None
-    return {"four_year": four_year, "two_year": two_year, "number": parts[1]}
+    year, number = match.groups()
+    return {"four_year": year if len(year) == 4 else "20" + year, "two_year": year[-2:], "number": number}
 
 
 def _fetch_year_dir(two_year: str) -> Optional[List[str]]:
@@ -45,14 +40,14 @@ def _fetch_year_dir(two_year: str) -> Optional[List[str]]:
         f"{GITHUB_API_DIR}/WWDC{two_year}",
         extra_headers={'Accept': 'application/vnd.github+json'},
     )
-    if not entries:
+    if not isinstance(entries, list):
         return None
     return [e['name'] for e in entries if e.get('type') == 'file' and e.get('name', '').endswith('.md')]
 
 
 def search_wwdc_sessions(query: str, year: Optional[int] = None, limit: int = 25) -> Dict:
     """
-    Search WWDC sessions by title or description (across every WWDC year).
+    Search WWDC sessions by title or description (across indexed WWDC years).
 
     Args:
         query: Space-separated keywords. All terms must match somewhere in
@@ -67,6 +62,19 @@ def search_wwdc_sessions(query: str, year: Optional[int] = None, limit: int = 25
     err = require_string(query, 'query')
     if err: return err
 
+    year_match: Optional[int] = None
+    if year is not None:
+        try:
+            if isinstance(year, bool) or not re.fullmatch(r"[0-9]{2}|20[0-9]{2}", str(year)):
+                raise ValueError("Use a two- or four-digit WWDC year")
+            y = int(year)
+        except (TypeError, ValueError):
+            return {
+                "error": "invalid_argument",
+                "message": f"`year` must be an integer (e.g. 2023 or 23); got {year!r}",
+            }
+        year_match = y if y > 99 else 2000 + y
+
     sessions = _fetch_sessions()
     if not sessions:
         return {
@@ -76,17 +84,6 @@ def search_wwdc_sessions(query: str, year: Optional[int] = None, limit: int = 25
 
     limit = clamp_limit(limit)
     terms = [t.lower() for t in query.split() if t]
-    year_match: Optional[int] = None
-    if year is not None:
-        try:
-            y = int(year)
-        except (TypeError, ValueError):
-            return {
-                "error": "invalid_argument",
-                "message": f"`year` must be an integer (e.g. 2023 or 23); got {year!r}",
-            }
-        year_match = y if y > 99 else 2000 + y
-
     matches: List[Dict] = []
     for sid, entry in sessions.items():
         if year_match is not None and entry.get('year') != year_match:
@@ -106,13 +103,15 @@ def search_wwdc_sessions(query: str, year: Optional[int] = None, limit: int = 25
 
     matches.sort(key=lambda m: (-(m['year'] or 0), m['code']))
 
-    return {
+    return mark_untrusted({
         "query": query,
+        "truncated": len(matches) > limit,
+        "search_scope": "community-maintained WWDC session index",
         "year": year,
         "total_matches": len(matches),
         "returned": min(len(matches), limit),
         "results": matches[:limit],
-    }
+    }, "github.com/wwdcnotes/wwdcnotes session metadata")
 
 
 def fetch_wwdc_session(session_id: str) -> Dict:
@@ -127,7 +126,6 @@ def fetch_wwdc_session(session_id: str) -> Dict:
 
     Errors:
         {error: 'invalid_session_id', message}                      — bad format
-        {error: 'year_not_indexed', message}                        — no notes folder for that year
         {error: 'session_not_found', message, permalink}            — folder exists but no file matches
         {error: 'fetch_failed', message, url}                       — network / decode error
     """
@@ -140,8 +138,8 @@ def fetch_wwdc_session(session_id: str) -> Dict:
     listing = _fetch_year_dir(parts["two_year"])
     if listing is None:
         return {
-            "error": "year_not_indexed",
-            "message": f"wwdcnotes has no notes folder for WWDC {parts['four_year']} (looked up WWDC{parts['two_year']}/)",
+            "error": "fetch_failed",
+            "message": f"Could not list WWDC {parts['four_year']} notes; the folder may be missing or GitHub unavailable/rate-limited",
         }
 
     prefix = f"WWDC{parts['two_year']}-{parts['number']}-"
@@ -156,8 +154,8 @@ def fetch_wwdc_session(session_id: str) -> Dict:
     raw_url = f"{GITHUB_RAW_BASE}/WWDC{parts['two_year']}/{filename}"
     try:
         req = urllib.request.Request(raw_url, headers={'User-Agent': UA_APP})
-        with urllib.request.urlopen(req, timeout=15) as response:
-            content = response.read(500_000).decode('utf-8', errors='replace')
+        with open_url(req, timeout=15) as response:
+            content = read_bounded(response, 500_000).decode('utf-8', errors='replace')
     except Exception as e:
         return {"error": "fetch_failed", "message": str(e), "url": raw_url}
 
@@ -168,7 +166,7 @@ def fetch_wwdc_session(session_id: str) -> Dict:
     return mark_untrusted({
         "id": canonical_id,
         "title": meta.get('title', ''),
-        "year": meta.get('year'),
+        "year": meta.get('year', int(parts["four_year"])),
         "code": parts['number'],
         "content": content,
         "source_url": raw_url,

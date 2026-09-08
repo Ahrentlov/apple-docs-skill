@@ -2,8 +2,8 @@
 
 Apple's legacy documentation archive at `developer.apple.com/library/archive/`:
 ~5200 Technical Notes, Technical Q&As, Sample Code projects, Guides, Release
-Notes, and Articles — most removed from the modern docs site but still
-canonical for pre-SwiftUI / pre-UIKit-era topics.
+Notes, and Articles — historical Apple documentation that may describe deprecated APIs or obsolete
+platform behavior. Check dates and current documentation before applying it.
 
 ## search_archive(query, platform=None, framework=None, resource_type=None, topic=None, limit=25) -> Dict
 
@@ -59,3 +59,13 @@ Sorted newest first.
 ```python
 {"count": int, "resource_types": [str, ...]}   # 8 types
 ```
+
+Results include `truncated`, `search_scope`, and `content_notice`. This is title
+search, not body search. Read returned legacy HTML URLs using an available
+browser tool; they cannot be passed to `fetch_documentation`.
+
+Before presenting a project link as usable, open it and verify that the final
+page still identifies the indexed project. Old archive URLs can redirect to
+unrelated modern documentation. Report an unavailable or mismatched target, or
+choose a verified alternative; index metadata alone does not establish that the
+project can still be downloaded or built.

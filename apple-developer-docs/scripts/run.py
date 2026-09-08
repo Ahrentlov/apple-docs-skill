@@ -4,8 +4,8 @@ Apple Developer Docs Runner
 ============================
 
 CLI entry point for executing Python code in a sandboxed environment with
-access to Apple documentation APIs. This is the main executable that Claude
-invokes via the Bash tool.
+access to Apple documentation APIs. This is the main executable that an agent
+invokes through its shell tool.
 
 Usage:
     python run.py "code_string"
@@ -17,10 +17,10 @@ The sandbox provides:
 - Resource limits (CPU, memory)
 - JSON output for easy parsing
 
-Available APIs in the sandbox (see SKILL.md / api-reference.md for full signatures):
+Available APIs in the sandbox (see SKILL.md / references/ for full signatures):
 
 Apple Documentation
-- fetch_documentation(url)              - Parse any /documentation/ or /design/human-interface-guidelines/ page
+- fetch_documentation(url, section?, start_line?, end_line?, max_lines?) - Parse any /documentation/ or /design/human-interface-guidelines/ page
 - search_apple_online_urls(query, ...)  - Apple docs search URLs
 - get_framework_info(framework)         - Framework documentation URL
 
@@ -29,7 +29,9 @@ Swift Evolution & Forums
 - search_swift_forums(query, ...) / search_swift_forums_urls(query, ...)
 
 Swift Repositories
-- search_swift_repos_urls(query) / fetch_github_file(url)
+- search_swift_repos_urls(query) / fetch_github_file(url, start_line?, end_line?, section?, ref?, max_lines?)
+- compare_github_file(url, base_ref, head_ref, context_lines?, max_diff_lines?)
+- search_symbols(framework, query, limit?, max_pages?)
 
 WWDC Sessions
 - search_wwdc_sessions(query, year?, limit?)  - Search ~3000 sessions
@@ -43,7 +45,7 @@ Documentation Archive
 - list_archive_frameworks / list_archive_topics / list_archive_resource_types
 
 Swift Compiler Internals
-- search_compiler_docs(query, limit?)            - File-path search
+- search_compiler_docs(query, limit?, ref?)            - File-path search
 - search_compiler_docs_text(query, limit?, ...)  - Full-text grep
 - list_compiler_phases / get_compiler_phase
 
@@ -90,12 +92,16 @@ Examples:
     parser.add_argument('--pretty', '-p', action='store_true', help='Pretty-print JSON output')
 
     args = parser.parse_args()
+    if not 1 <= args.timeout <= 300:
+        parser.error('--timeout must be between 1 and 300 seconds')
+    if args.file and args.code:
+        parser.error('pass either inline code or --file, not both')
 
     # Get code from argument or file
     if args.file:
         try:
-            with open(args.file, 'r') as f:
-                code = f.read()
+            with open(args.file, 'r', encoding='utf-8') as f:
+                code = f.read(10001)
         except FileNotFoundError:
             print(json.dumps({"success": False, "error": f"File not found: {args.file}"}))
             sys.exit(1)

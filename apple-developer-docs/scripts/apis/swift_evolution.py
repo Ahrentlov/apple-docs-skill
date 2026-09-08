@@ -13,7 +13,7 @@ import urllib.parse
 import json
 from typing import Dict, Optional, List
 
-from ._utils import UA_APP, clamp_limit, fetch_json, mark_untrusted, require_string
+from ._utils import open_url, read_bounded, UA_APP, clamp_limit, fetch_json, mark_untrusted, require_string
 
 
 class SwiftEvolutionAPI:
@@ -38,7 +38,7 @@ class SwiftEvolutionAPI:
 _api = SwiftEvolutionAPI()
 
 
-def search_proposals(feature: str) -> Dict:
+def search_proposals(feature: str, version: Optional[str] = None, status: Optional[str] = None, limit: int = 20, offset: int = 0) -> Dict:
     """
     Search Swift Evolution proposals by feature name, version, or status.
 
@@ -51,6 +51,13 @@ def search_proposals(feature: str) -> Dict:
     """
     err = require_string(feature, 'feature')
     if err: return err
+    for field, value in (("version", version), ("status", status)):
+        if value is not None:
+            err = require_string(value, field)
+            if err: return err
+    if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+        return {"error": "invalid_input", "message": "offset must be a nonnegative integer"}
+    limit = clamp_limit(limit)
     data = _api._fetch_data()
 
     if not data:
@@ -70,20 +77,24 @@ def search_proposals(feature: str) -> Dict:
 
     for proposal in proposals:
         score = 0
-        status = proposal.get('status', {})
-        impl_version = status.get('version', '')
+        proposal_status = proposal.get('status', {})
+        impl_version = proposal_status.get('version', '')
+        if version is not None and not (impl_version == version or impl_version.startswith(version + '.')):
+            continue
+        if status is not None and proposal_status.get('state', '').lower() != status.lower():
+            continue
 
         # Version scoring
         if search_version:
             if impl_version == search_version:
                 score += 100
-            elif impl_version and impl_version.startswith(search_version):
+            elif impl_version and impl_version.startswith(search_version + "."):
                 score += 50
 
         # Text scoring
         title = proposal.get('title', '').lower()
         summary = proposal.get('summary', '').lower()
-        status_state = status.get('state', '').lower()
+        status_state = proposal_status.get('state', '').lower()
 
         if feature_lower in title:
             score += 10
@@ -96,7 +107,7 @@ def search_proposals(feature: str) -> Dict:
             results.append({
                 'se_number': proposal.get('id', ''),
                 'title': proposal.get('title', ''),
-                'status': status.get('state', 'unknown'),
+                'status': proposal_status.get('state', 'unknown'),
                 'version': impl_version or 'N/A',
                 'summary': proposal.get('summary', '')[:200] + '...' if len(proposal.get('summary', '')) > 200 else proposal.get('summary', ''),
                 'github_url': f"{_api.GITHUB_WEB_BASE}/blob/main/proposals/{proposal.get('link', '')}",
@@ -108,7 +119,19 @@ def search_proposals(feature: str) -> Dict:
     response = {
         'feature': feature,
         'total_found': len(results),
-        'proposals': results[:20],
+        'proposals': results[offset:offset + limit],
+        'returned': len(results[offset:offset + limit]),
+        'offset': offset,
+        'truncated': offset > 0 or offset + limit < len(results),
+        'next_offset': offset + limit if limit > 0 and offset + limit < len(results) else None,
+        'filters': {'version': version, 'status': status},
+        'search_scope': 'case-insensitive substring of the complete title, summary, or status state; '
+                        'queries containing Swift N also match implementation version N or N.x; '
+                        'empty query matches all metadata; no proposal-body search',
+        'matching': {'fields': ['title', 'summary', 'status.state'],
+                     'rule': 'case-insensitive substring (whole query, not separate words)',
+                     'implementation_version_query': search_version,
+                     'empty_query_matches_all': feature == ''},
         'available_versions': data.get('implementationVersions', [])
     }
 
@@ -116,12 +139,12 @@ def search_proposals(feature: str) -> Dict:
     if len(results) < 3:
         encoded_query = urllib.parse.quote(feature)
         response['deep_search'] = {
-            'reason': f"Only {len(results)} result(s) found in proposal titles/summaries.",
+            'reason': f"Only {len(results)} result(s) found in proposal metadata.",
             'suggestion': "The term may appear in proposal body text. Try GitHub deep search:",
             'github_url': f"https://github.com/search?q={encoded_query}+repo:swiftlang/swift-evolution+path:proposals&type=code"
         }
 
-    return response
+    return mark_untrusted(response, "swift.org Swift Evolution metadata")
 
 
 def get_proposal(se_number: str) -> Dict:
@@ -174,7 +197,7 @@ def get_proposal(se_number: str) -> Dict:
     status = proposal.get('status', {})
     authors = proposal.get('authors', [])
 
-    return {
+    return mark_untrusted({
         'se_number': proposal.get('id', ''),
         'title': proposal.get('title', ''),
         'status': status.get('state', 'unknown'),
@@ -185,7 +208,7 @@ def get_proposal(se_number: str) -> Dict:
         'raw_url': f"{_api.GITHUB_RAW_BASE}/{proposal.get('link', '')}",
         'swift_org_url': f'https://www.swift.org/swift-evolution/#?id={proposal.get("id", "")}',
         'forum_url': f'https://forums.swift.org/search?q={urllib.parse.quote(proposal.get("title", ""))}'
-    }
+    }, "swift.org Swift Evolution metadata")
 
 
 def search_swift_forums_urls(query: str, category: Optional[str] = None) -> Dict:
@@ -250,8 +273,8 @@ def search_swift_forums(query: str, category: Optional[str] = None, limit: int =
                 'Accept': 'application/json'
             }
         )
-        with urllib.request.urlopen(req, timeout=15) as response:
-            data = json.loads(response.read().decode('utf-8'))
+        with open_url(req, timeout=15) as response:
+            data = json.loads(read_bounded(response).decode('utf-8'))
     except Exception as e:
         return {'error': 'fetch_failed', 'message': str(e), 'query': query}
 
@@ -280,6 +303,7 @@ def search_swift_forums(query: str, category: Optional[str] = None, limit: int =
             'like_count': p.get('like_count', 0),
             'created_at': p.get('created_at', '')[:10],
             'topic_id': p.get('topic_id'),
+            'post_url': f"https://forums.swift.org/t/{p.get('topic_id')}/{post_number}",
         }
         if topic:
             slug = topic.get('slug', '')
@@ -294,6 +318,9 @@ def search_swift_forums(query: str, category: Optional[str] = None, limit: int =
     return mark_untrusted({
         'query': query,
         'category': category,
+        'search_scope': 'one upstream search page; counts are not global totals',
+        'more_available': bool(data.get('grouped_search_result', {}).get('more_full_page_results') or data.get('grouped_search_result', {}).get('more_posts')),
+        'truncated': len(topics_raw) > limit or len(posts_raw) > limit,
         'total_topics': len(topics_raw),
         'total_posts': len(posts_raw),
         'returned_topics': len(topics),

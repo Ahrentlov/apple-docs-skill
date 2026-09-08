@@ -10,7 +10,7 @@ heavy lifting; this module adds discovery and a topic index.
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 
-from ._utils import all_terms_match, clamp_limit, fetch_json, require_string
+from ._utils import all_terms_match, clamp_limit, fetch_json, require_string, mark_untrusted
 from .apple_docs import fetch_documentation
 
 
@@ -22,6 +22,7 @@ ROOT_CATEGORIES = ("getting-started", "foundations", "patterns", "components", "
 # Built index is memoized for the process lifetime so search_hig + fetch_hig in
 # one script don't each pay the full ~40-fetch walk.
 _topic_index_cache: Optional[List[Dict]] = None
+_index_failures: List[str] = []
 
 def _fetch_node(slug: str) -> Optional[Dict]:
     return fetch_json(f"{DOCC_BASE}/{slug}.json")
@@ -44,16 +45,17 @@ def _iter_child_refs(data: Dict):
 def _build_topic_index() -> List[Dict]:
     """
     BFS to depth 2 across the HIG tree (root → category → sub-page → topic).
-    Collects every reachable page so callers can search both container titles
+    Collects pages reachable within that depth so callers can search container titles
     ('Menus and actions') and leaf titles ('Buttons').
 
-    Each BFS level is fetched concurrently so the ~40-page walk stays well under
-    the sandbox timeout. The result is memoized for the process lifetime.
+    Each BFS level is fetched concurrently. Complete indexes are memoized for
+    the process lifetime; failed pages are disclosed and retried on later calls.
     """
-    global _topic_index_cache
+    global _topic_index_cache, _index_failures
     if _topic_index_cache is not None:
         return _topic_index_cache
 
+    _index_failures = []
     topics: List[Dict] = []
     seen_slugs: set = set()
 
@@ -65,6 +67,7 @@ def _build_topic_index() -> List[Dict]:
         children_to_expand: List[tuple] = []  # (slug, category_title)
         for category, root_data in root_data_by_category.items():
             if not root_data:
+                _index_failures.append(category)
                 continue
             category_title = root_data.get('metadata', {}).get('title', category)
             for slug, title, url, abstract in _iter_child_refs(root_data):
@@ -80,8 +83,9 @@ def _build_topic_index() -> List[Dict]:
         # Level 2: fetch every discovered child page at once.
         child_slugs = [slug for slug, _ in children_to_expand]
         child_data_list = list(pool.map(_fetch_node, child_slugs))
-        for (_, category_title), child_data in zip(children_to_expand, child_data_list):
+        for (child_slug, category_title), child_data in zip(children_to_expand, child_data_list):
             if not child_data:
+                _index_failures.append(child_slug)
                 continue
             for c_slug, c_title, c_url, c_abstract in _iter_child_refs(child_data):
                 if c_slug in seen_slugs:
@@ -92,7 +96,7 @@ def _build_topic_index() -> List[Dict]:
                     "url": c_url, "abstract": c_abstract,
                 })
 
-    if topics:  # only cache a real index, so a transient failure can retry
+    if topics and not _index_failures:  # retry incomplete indexes on the next call
         _topic_index_cache = topics
     return topics
 
@@ -136,13 +140,18 @@ def search_hig(query: str, platform: Optional[str] = None, limit: int = 25) -> D
             continue
         matches.append(topic)
 
-    return {
+    return mark_untrusted({
         "query": query,
+        "platform_filter_applied": False,
+        "search_scope": "titles and abstracts in a depth-two HIG index",
+        "partial": bool(_index_failures),
+        "failed_pages": list(_index_failures),
+        "truncated": len(matches) > limit,
         "platform": platform,
         "total_matches": len(matches),
         "returned": min(len(matches), limit),
         "results": matches[:limit],
-    }
+    }, "developer.apple.com HIG")
 
 
 def fetch_hig(topic: str) -> Dict:
@@ -187,6 +196,8 @@ def fetch_hig(topic: str) -> Dict:
     if not matches:
         matches = [t for t in topics if needle in t['slug'].lower() or needle in t['title'].lower()]
 
+    if not matches and _index_failures:
+        return {"error": "fetch_failed", "message": "HIG index is incomplete", "failed_pages": list(_index_failures)}
     if not matches:
         return {"error": "topic_not_found", "message": f"No HIG topic matching '{topic}'"}
     if len(matches) > 1:

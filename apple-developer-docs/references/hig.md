@@ -5,7 +5,10 @@ Search and fetch Apple's HIG. Same DocC JSON schema as `/documentation/`, so
 
 ## search_hig(query: str, platform: str | None = None, limit: int = 25) -> Dict
 
-Search HIG topics by title + abstract.
+Search HIG topics by title + abstract in a depth-two index. `platform` only
+annotates the request; it does not filter HIG content. Results include
+`platform_filter_applied: False`, `partial`, `failed_pages`, `truncated`, and
+`search_scope`. Incomplete indexes are not cached as complete results.
 
 **Returns:**
 ```python

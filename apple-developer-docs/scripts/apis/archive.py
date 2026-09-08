@@ -11,10 +11,9 @@ Backed by the same `library.json` the archive's navigation page loads client-sid
 
 import html
 import json
-import re
 from typing import Dict, List, Optional
 
-from ._utils import UA_APPLE_BROWSER, all_terms_match, clamp_limit, fetch_json, require_string
+from ._utils import UA_APPLE_BROWSER, all_terms_match, clamp_limit, fetch_json, require_string, mark_untrusted
 
 
 ARCHIVE_BASE = "https://developer.apple.com/library/archive"
@@ -28,12 +27,34 @@ COLUMNS = {
 
 
 TOPIC_TARGETS = {"Resource Types": "type", "Technologies": "framework", "Topics": "topic"}
-_TRAILING_COMMA_RE = re.compile(r',(\s*[}\]])')
 
 
 def _decode_library_json(text: str) -> Dict:
-    # library.json uses JS-style trailing commas (evalJSON-compatible).
-    return json.loads(_TRAILING_COMMA_RE.sub(r'\1', text))
+    # Remove JS-style trailing commas only outside JSON strings.
+    output = []
+    quoted = escaped = False
+    for index, char in enumerate(text):
+        if quoted:
+            output.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+            output.append(char)
+        elif char == ',':
+            following = index + 1
+            while following < len(text) and text[following].isspace():
+                following += 1
+            if following >= len(text) or text[following] not in '}]':
+                output.append(char)
+        else:
+            output.append(char)
+    return json.loads(''.join(output))
+
 
 
 class ArchiveAPI:
@@ -163,8 +184,10 @@ def search_archive(
 
     results = [_api._doc_to_dict(row, maps, doc_names[idx]) for _, idx, row in matches[:limit]]
 
-    return {
+    return mark_untrusted({
         "query": query,
+        "search_scope": "legacy archive titles",
+        "truncated": len(matches) > limit,
         "filters": {
             "platform": platform, "framework": framework,
             "resource_type": resource_type, "topic": topic,
@@ -172,7 +195,7 @@ def search_archive(
         "total_matches": len(matches),
         "returned": len(results),
         "results": results,
-    }
+    }, "developer.apple.com legacy archive")
 
 
 def _list_archive_names(bucket: str) -> Optional[List[str]]:
@@ -188,7 +211,7 @@ def list_archive_frameworks() -> Dict:
     names = _list_archive_names("framework")
     if names is None:
         return {"error": "fetch_failed", "message": "Could not fetch library.json"}
-    return {"count": len(names), "frameworks": names}
+    return mark_untrusted({"count": len(names), "frameworks": names}, "developer.apple.com legacy archive")
 
 
 def list_archive_topics() -> Dict:
@@ -196,7 +219,7 @@ def list_archive_topics() -> Dict:
     names = _list_archive_names("topic")
     if names is None:
         return {"error": "fetch_failed", "message": "Could not fetch library.json"}
-    return {"count": len(names), "topics": names}
+    return mark_untrusted({"count": len(names), "topics": names}, "developer.apple.com legacy archive")
 
 
 def list_archive_resource_types() -> Dict:
@@ -204,4 +227,4 @@ def list_archive_resource_types() -> Dict:
     names = _list_archive_names("type")
     if names is None:
         return {"error": "fetch_failed", "message": "Could not fetch library.json"}
-    return {"count": len(names), "resource_types": names}
+    return mark_untrusted({"count": len(names), "resource_types": names}, "developer.apple.com legacy archive")

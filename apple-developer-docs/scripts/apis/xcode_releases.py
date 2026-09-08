@@ -6,9 +6,11 @@ Index of Apple's Xcode release notes. Pair with `fetch_documentation(url)` to
 read a specific release-notes page — this module provides discovery only.
 """
 
+import re
+
 from typing import Dict, List, Optional
 
-from ._utils import fetch_json, require_string
+from ._utils import fetch_json, require_string, mark_untrusted
 
 
 INDEX_URL = "https://developer.apple.com/tutorials/data/documentation/xcode-release-notes.json"
@@ -27,6 +29,8 @@ def _flatten_releases(data: Dict) -> List[Dict]:
         for ident in section.get('identifiers', []):
             ref = references.get(ident, {})
             url_path = ref.get('url') or ''
+            if not url_path or not ref.get('title'):
+                continue
             out.append({
                 "version": ref.get('title', ''),
                 "major": major,
@@ -56,8 +60,8 @@ def list_xcode_release_notes(major: Optional[str] = None) -> Dict:
     releases = _flatten_releases(data)
     if major:
         needle = str(major).lower()  # tolerate int input, e.g. major=15
-        releases = [r for r in releases if needle in r['major'].lower()]
-    return {"count": len(releases), "releases": releases}
+        releases = [r for r in releases if re.search(r'(?<![0-9])' + re.escape(needle) + r'(?![0-9])', r['major'].lower())]
+    return mark_untrusted({"count": len(releases), "releases": releases}, "developer.apple.com Xcode release index")
 
 
 def get_xcode_release_notes_url(version: str) -> Dict:
@@ -84,7 +88,8 @@ def get_xcode_release_notes_url(version: str) -> Dict:
             "message": "Could not fetch the Xcode release-notes index from developer.apple.com",
         }
     releases = _flatten_releases(data)
-    matches = [r for r in releases if needle in r['version'].lower()]
+    pattern = r'(?<![0-9])' + re.escape(needle) + r'(?![0-9])'
+    matches = [r for r in releases if re.search(pattern, r['version'].lower())]
     if not matches:
         return {
             "error": "version_not_found",
@@ -97,4 +102,4 @@ def get_xcode_release_notes_url(version: str) -> Dict:
             "message": f"'{version}' matches {len(matches)} releases — pass a more specific version",
             "candidates": [{"version": m['version'], "url": m['url']} for m in matches[:10]],
         }
-    return matches[0]
+    return mark_untrusted(dict(matches[0]), "developer.apple.com Xcode release index")

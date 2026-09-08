@@ -1,22 +1,34 @@
 # Apple Developer Docs Skill
 
-An agent skill that gives the Agent efficient access to Apple developer documentation through sandboxed Python code execution.
+An agent skill for source-backed Apple and Swift documentation lookups. The
+agent writes a short Python query that fetches and filters documentation before
+returning relevant evidence to its context. No MCP server or third-party Python
+packages are required.
 
-## What it does
+New lookup features include bounded section/line reads with citations,
+framework-scoped symbol discovery, compiler searches pinned to a branch/tag/commit,
+and bounded comparisons of a file between two revisions. See the
+[API guide](apple-developer-docs/SKILL.md) for signatures and coverage limits.
 
-Instead of making multiple API calls and processing large JSON responses, this skill lets the Agent write Python code that fetches and filters Apple documentation directly — significantly reducing token usage.
+## Sources
 
-### Available APIs
+- **Apple documentation:** DocC declarations, availability, deprecation,
+  discussion, parameters, return values, related symbols, and section content.
+- **Human Interface Guidelines:** topic discovery and structured page content.
+- **Xcode release notes:** version discovery and DocC page fetching.
+- **Documentation Archive:** title/facet search over legacy guides, Tech Notes,
+  Q&As, and sample-code links. Read linked HTML with a browser tool.
+- **Swift Evolution:** proposal metadata search with version/status filters and
+  pagination; fetch proposal bodies through the GitHub helper.
+- **Swift Forums:** topics and post excerpts from a search page.
+- **Apple/SwiftLang repositories:** scoped search-link generation and file reads.
+- **Swift compiler docs:** path search and bounded full-text search, plus a
+  static compiler-phase overview.
+- **WWDC:** search a community-maintained session index and fetch community notes.
 
-- **Apple Documentation** — Fetch and parse docs from developer.apple.com (works for `/documentation/` and `/design/human-interface-guidelines/`)
-- **Documentation Archive** — Search ~5200 legacy Tech Notes, Tech Q&As, Sample Code, Guides, and Release Notes from developer.apple.com/library/archive
-- **Swift Evolution** — Search 500+ proposals by keyword, version, or status
-- **Swift Forums** — Search forums.swift.org for discussions, pitches, and review threads
-- **Swift Repositories** — Search and fetch source code from Apple/SwiftLang GitHub repos
-- **Swift Compiler Internals** — Search compiler docs in `swiftlang/swift/docs` by filename or full text (SIL, ABI, type checker, IRGen, generics)
-- **WWDC Sessions** — Search ~3000 sessions; fetch community-written markdown notes
-- **Human Interface Guidelines** — Search and fetch HIG topics (Buttons, Dark Mode, Accessibility, …)
-- **Xcode Release Notes** — Discover every Xcode release-notes page; resolve versions to URLs
+Search-link generators return URLs, not search results. The skill explains how
+to combine those links with an available browser/search tool. It distinguishes
+primary documentation from community notes and discussions.
 
 ## Installation
 
@@ -24,104 +36,95 @@ Instead of making multiple API calls and processing large JSON responses, this s
 npx skills add Ahrentlov/apple-docs-skill --skill apple-developer-docs
 ```
 
-Or download the `.zip` from [Releases](https://github.com/Ahrentlov/apple-docs-skill/releases) and place the `apple-developer-docs/` folder in your agent's skills directory.
+Or download the skill archive from
+[Releases](https://github.com/Ahrentlov/apple-docs-skill/releases) and place the
+`apple-developer-docs/` folder in your agent's skills directory.
+
+Requires **Python 3.10+ on macOS or Linux**. Network access to the documentation
+sources is needed. Normal agent execution permissions still apply.
 
 ## Usage
 
-The skill activates automatically when you ask about Apple APIs, Swift Evolution proposals, Swift Forums discussions, WWDC sessions, or Human Interface Guidelines.
+The skill is intended to activate for documentation lookups, not every Swift
+programming question. Example requests:
 
-**Example prompts:**
-- "Look up the SwiftUI View protocol"
-- "Find Swift Evolution proposals about async"
-- "What's the forum discussion around SE-0461?"
-- "Search WWDC sessions on concurrency and fetch the top one"
-- "Show me the HIG topic on Dark Mode"
-- "Fetch the Swift source for Task"
-- "Find archived Core Data sample code"
-- "Grep the compiler docs for 'reborrow'"
-- "What changed in Xcode 15.4?"
+- “Look up SwiftUI View and its platform availability.”
+- “Find implemented Swift 6 proposals about async.”
+- “Find forum discussion around SE-0461.”
+- “Search WWDC sessions on concurrency and read the top session's notes.”
+- “Show me the HIG topic on Dark Mode.”
+- “Fetch the Swift source for Task.”
+- “Find archived Core Data sample code.”
+- “Search compiler docs for reborrow.”
+- “What changed in Xcode 15.4?”
 
-## Token efficiency
+To invoke the runner directly from this checkout:
 
-The sandbox filters API responses before they enter context. Across all tools:
-
-| API | Typical reduction |
-|-----|-------------------|
-| `fetch_documentation` / `fetch_hig` | 97% — SwiftUI View: 94KB → 1.7KB |
-| `search_wwdc_sessions` | 95% — ~3000 sessions filtered to title + description matches |
-| `search_swift_forums` | 95% — 50 topics down to top 5 with key fields |
-| `search_proposals` | 92% — dozens of proposals to title/status/SE number |
-| `search_compiler_docs_text` | 90% — full file content reduced to matched lines |
-| `fetch_github_file` | 74–90% — full source to first 30 lines |
-| `get_proposal` | 73% — full metadata to summary fields |
-
-The Agent controls the depth — a quick lookup returns ~120 chars, a deep dive ~10KB.
-
-## Why code execution?
-
-This skill adapts the [code execution architecture](https://www.anthropic.com/engineering/code-execution-with-mcp) originally designed for MCP servers and applies it as a standalone skill. Instead of direct tool calls, the Agent writes Python code that runs in a sandboxed subprocess, filtering and combining API results before they enter context — no MCP server required.
-
-This matters most for data-heavy APIs — Apple documentation pages, 500+ Swift Evolution proposals, forum threads, and GitHub source files can be large. Running queries and filtering in the sandbox means only the relevant fields come back. Combining multiple queries in a single execution also cuts down on round trips.
-
-## Security model
-
-Security scanners will flag this skill for code execution and network access. Both are its purpose, not an accident: the skill exists to run generated Python and fetch remote documentation.
-
-### Why sandbox agent-written code at all?
-
-An agent running this skill typically has shell access already, so the sandbox is not about protecting the machine from the agent in general. It exists for three specific reasons:
-
-1. **It makes the skill safe to auto-approve.** Users allowlist `run.py` invocations once. Without the sandbox, that grant would mean "arbitrary Python with my full user privileges". With it, the same grant means "query documentation APIs and compute over the results", and nothing else.
-2. **It contains indirect prompt injection.** The skill ingests untrusted text (user-generated forum posts, community notes, fetched source). If that content ever steered the generated code, sandboxed code still cannot read local files, reach non-documentation hosts, or spawn processes. The blast radius of a poisoned lookup stays inside the sandbox.
-3. **It keeps the skill auditable.** Reviewers and automated scanners can verify a small, explicit boundary (one entry point, one allowlist, fixed egress) instead of reasoning about arbitrary code.
-
-### The layers
-
-- **Subprocess isolation** is the primary boundary. Generated code never runs in the parent process. It runs in a separate Python process with CPU-time and memory limits (`resource.setrlimit`) and a hard timeout.
-- **AST validation** (defense-in-depth) rejects code before it runs: no imports, no `exec`/`eval`/`open`/`getattr`, no dunder access, no `os`/`sys`/`subprocess`.
-- **Restricted builtins**: the sandbox namespace exposes only a small allowlist (`len`, `sorted`, type constructors, and similar) plus the documented API functions. All I/O goes through an IPC bridge to the parent; the sandbox itself has no file or socket access.
-- **Constrained egress**: network requests go only to fixed documentation hosts (developer.apple.com, swift.org, forums.swift.org, GitHub), and GitHub fetches are restricted to the `apple` and `swiftlang` organizations with a 1 MB size cap.
-- **Third-party content is labeled**: API results carrying external text include a `content_notice`, and large blobs (GitHub files, WWDC notes) are wrapped in explicit `BEGIN/END EXTERNAL CONTENT` boundary markers, so a consuming agent can distinguish quoted untrusted text (including user-generated forum posts) from the skill's own output and ignore instructions embedded in it.
-
-Full details on the threat model, allowed builtins, IPC protocol, and content-boundary mechanics are in [`references/security.md`](apple-developer-docs/references/security.md) and [`references/sandbox.md`](apple-developer-docs/references/sandbox.md).
-
-## Structure
-
-```
-apple-developer-docs/
-├── SKILL.md              # Skill instructions
-├── scripts/
-│   ├── run.py            # Sandbox runner (entry point)
-│   ├── sandbox.py        # Sandboxed execution environment
-│   ├── security.py       # AST-based code validation
-│   └── apis/             # API implementations
-│       ├── _utils.py             # Shared fetch helpers + third-party content marking
-│       ├── apple_docs.py
-│       ├── archive.py            # Documentation Archive
-│       ├── swift_evolution.py    # Proposals + Forums
-│       ├── swift_repos.py
-│       ├── swift_compiler.py     # Compiler internals (path + full-text search)
-│       ├── wwdc_notes.py         # WWDC search + note fetch
-│       ├── hig.py                # HIG search + topic fetch
-│       └── xcode_releases.py     # Xcode release-notes index
-└── references/
-    ├── apple-docs.md      # fetch_documentation + Apple-docs URL helpers
-    ├── archive.md         # Documentation Archive search
-    ├── compiler.md        # Swift compiler internals (path + full-text)
-    ├── hig.md             # Human Interface Guidelines
-    ├── sandbox.md         # Sandbox model + allowed builtins
-    ├── security.md        # AST validation + threat model
-    ├── swift-evolution.md # Proposals + Forums
-    ├── swift-repos.md     # Apple/SwiftLang GitHub source fetch
-    ├── wwdc.md            # WWDC sessions + community notes
-    └── xcode-releases.md  # Xcode release-notes index
+```bash
+python3 apple-developer-docs/scripts/run.py --timeout 60 \
+  'result = fetch_hig("buttons")'
 ```
 
-## Known Limitations
+For multiline queries, save code to a temporary file and pass `--file path.py`.
+APIs and restricted builtins are preloaded. Assign the final output to `result`.
+Check both the execution envelope's `success` and any API-level `error`.
 
-- Requires Python 3.10+ (uses `match`/`case`)
-- `RLIMIT_AS` memory limits may not apply on all platforms
-- Swift Forums search returns top 20 topics and 20 posts per query
+## Why query code?
+
+Apple documentation indexes and source files can be large. Filtering in Python
+lets an agent return the declaration, relevant sections, and source URL without
+loading the whole upstream response into context. One query can combine sources
+and follow links. Token savings depend on the query and retained evidence; this
+repository does not claim a measured universal reduction.
+
+The design draws on the
+[code execution with MCP architecture](https://www.anthropic.com/engineering/code-execution-with-mcp),
+implemented here as a standalone skill. The instructions emphasize retaining
+citations, availability, version information, and search-completeness metadata
+alongside compact results.
+
+Proposal metadata and complete HIG indexes are memoized within a process.
+Separate CLI invocations start fresh; no disk cache is written.
+
+## Execution model
+
+A supervisor bounds wall time across a worker running documentation APIs and a
+separate Python process running generated query code. Queries use AST validation,
+restricted builtins, JSON IPC, and resource/output limits. HTTP helpers validate
+HTTPS hosts, GitHub repository scope, and redirects, and bound response sizes.
+
+**This is not an OS filesystem/network sandbox or a guarantee that arbitrary
+Python is safe.** Processes run as the invoking user. Keep the host agent's normal
+sandbox and approval controls. `--file` reads a supplied local query file before
+validation. The supervisor uses POSIX fork and is intended for a single-threaded
+CLI, not embedding in a multithreaded application.
+
+The default wall deadline is 10 seconds, adjustable from 1 to 300. Captured prints
+are capped at 64 KiB, query output at 1 MiB, and IPC messages at 8 MiB. A 50 MiB
+query-process address-space limit is attempted but may not work on macOS; it does
+not cover the API worker. See [security.md](apple-developer-docs/references/security.md)
+and [sandbox.md](apple-developer-docs/references/sandbox.md) for the actual controls.
+
+## Limitations
+
+- Apple URL helpers and repository search helpers generate links only.
+- DocC rendering covers common text, code, lists, tables, and cross-references.
+  `unrendered_types` identifies unsupported content; consult the original page
+  when it matters. Non-Swift language variants require the original page.
+- HIG discovery walks a bounded topic index; `platform` is an annotation, not a
+  filter. Partial fetches are disclosed and are not cached as complete indexes.
+- Compiler text search has a file budget and per-file size cap. Failures and
+  truncation are disclosed. Search terms must occur on the same line.
+- Forum results cover one upstream search page, not all matches. WWDC notes are
+  community-authored and are not available for every session.
+- Upstream schemas, rate limits, and availability can change. Empty or partial
+  results do not prove that documentation does not exist.
+
+## Development
+
+The installable skill lives in `apple-developer-docs/`: `SKILL.md` contains the
+workflow, `scripts/` contains the runner and API adapters, and `references/`
+contains source-specific signatures, schemas, and examples.
 
 ## License
 

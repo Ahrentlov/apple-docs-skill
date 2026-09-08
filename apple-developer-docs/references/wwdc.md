@@ -1,6 +1,6 @@
 # WWDC Sessions
 
-Search Apple's WWDC catalog and fetch community-written notes. Backed by the
+Search a community-maintained WWDC catalog and fetch community-written notes. Backed by the
 `wwdcnotes/wwdcnotes` GitHub repo: `Sources/Sessions/sessions.json` (metadata)
 and `Sources/WWDCNotes/WWDCNotes.docc/WWDC{YY}/WWDC{YY}-{number}-{slug}.md`
 (notes).
@@ -54,7 +54,7 @@ Fetch the community-written notes (markdown) for a session.
     "title": str,
     "year": int,
     "code": str,
-    "content": str,       # raw markdown
+    "content": str,       # markdown wrapped in external-content markers
     "source_url": str,    # raw.githubusercontent.com URL
     "permalink": str      # wwdcnotes.com URL
 }
@@ -62,13 +62,23 @@ Fetch the community-written notes (markdown) for a session.
 
 **Errors:**
 - `invalid_session_id` — bad format.
-- `year_not_indexed` — no notes folder for that year.
 - `session_not_found` — folder exists but no file matches; includes `permalink`.
-- `fetch_failed` — network / decode error.
+- `fetch_failed` — index/listing unavailable, network/decode failure, or notes exceed 500,000 bytes. A missing year folder and a network failure are not reliably distinguishable.
 
 **Example:**
 ```python
 hits = search_wwdc_sessions("concurrency", year=2023, limit=3)
-session = fetch_wwdc_session(hits["results"][0]["id"])
-result = {"title": session["title"], "first_500": session["content"][:500]}
+if 'error' in hits or not hits['results']:
+    result = hits
+else:
+    session = fetch_wwdc_session(hits['results'][0]['id'])
+    if 'error' in session:
+        result = session
+    else:
+        result = {'title': session['title'], 'source_url': session['source_url'],
+                  'community_notes_excerpt': session['content'][:1500]}
 ```
+
+Search output includes `truncated`, `search_scope`, and `content_notice`. Session
+metadata and notes are community-maintained, with incomplete coverage; cite the
+notes actually read and verify API semantics against Apple documentation.

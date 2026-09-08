@@ -6,13 +6,12 @@ Executes user-provided Python code in an isolated subprocess with:
 - Resource limits (CPU time, memory)
 - Restricted builtins
 - Dynamic API calls via IPC (stdin/stdout)
-- No file system access
-- No network access (beyond API bridge)
+- No file or network builtins exposed to generated code
 
 Security Model:
-- Subprocess isolation is the PRIMARY security boundary
-- Static code validation is defense-in-depth
-- Resource limits prevent DoS attacks
+- AST checks and restricted builtins constrain generated code; this is not OS confinement
+- A supervising process bounds wall time, including API calls
+- Resource and output limits bound common accidental resource exhaustion
 
 IPC Protocol:
 - Sandbox writes API requests to stdout as JSON: {"__api_call__": {"func": "name", "args": [...]}}
@@ -26,13 +25,12 @@ import json
 import os
 import sys
 import time
-import threading
-import queue
+import multiprocessing
+import signal
 from typing import Dict, Any, Optional, Callable
 from dataclasses import dataclass, fields
-from pathlib import Path
 
-from security import CodeValidator, ValidationResult
+from security import CodeValidator
 
 
 @dataclass
@@ -61,7 +59,7 @@ class ExecutionResult:
         dataclass automatically — no hand-maintained field list to drift.
         """
         d = {f.name: getattr(self, f.name) for f in fields(self)}
-        return {k: v for k, v in d.items() if v is not None and v != [] and v != ""}
+        return {k: v for k, v in d.items() if k in {"success", "result", "execution_time_ms", "api_calls_made"} or (v is not None and v != [] and v != "")}
 
 
 class SandboxExecutor:
@@ -106,169 +104,57 @@ ALLOWED_BUILTINS = {{
     'True': True, 'False': False, 'None': None,
 }}
 
-# IPC functions - these call back to the parent process
-def _make_api_call(func_name, *args):
-    """Make an API call to parent process via IPC."""
-    request = {{"__api_call__": {{"func": func_name, "args": list(args)}}}}
-    # Write request to stdout (parent reads this)
-    sys.stdout.write(json.dumps(request) + "\\n")
-    sys.stdout.flush()
-    # Read response from stdin (parent writes this)
-    response_line = sys.stdin.readline()
-    if not response_line:
-        raise RuntimeError(f"No response from API for {{func_name}}")
-    response = json.loads(response_line)
-    if "error" in response:
-        raise RuntimeError(f"API error: {{response['error']}}")
-    return response.get("result")
+# API implementations remain in the worker; only JSON crosses this bridge.
+def make_api(func_name):
+    def call(*args, **kwargs):
+        request = {{"__api_call__": {{"func": func_name, "args": args, "kwargs": kwargs}}}}
+        wire = json.dumps(request)
+        if len(wire.encode('utf-8')) > {max_ipc_bytes}:
+            raise ValueError("API request exceeds IPC limit")
+        sys.stdout.write(wire + "\\n")
+        sys.stdout.flush()
+        response_line = sys.stdin.readline({max_ipc_bytes} + 1)
+        if not response_line:
+            raise RuntimeError("API bridge closed")
+        response = json.loads(response_line)
+        if "error" in response:
+            raise RuntimeError(response['error'])
+        return response['result']
+    return call
 
-def fetch_documentation(url):
-    """Fetch Apple Developer documentation."""
-    return _make_api_call("fetch_documentation", url)
-
-def search_proposals(feature):
-    """Search Swift Evolution proposals."""
-    return _make_api_call("search_proposals", feature)
-
-def get_proposal(se_number):
-    """Get details of a specific Swift Evolution proposal."""
-    return _make_api_call("get_proposal", se_number)
-
-def search_swift_forums_urls(query, category=None):
-    """Search Swift Forums - returns URLs only."""
-    return _make_api_call("search_swift_forums_urls", query, category)
-
-def search_swift_forums(query, category=None, limit=20):
-    """Search Swift Forums - returns topics and posts."""
-    return _make_api_call("search_swift_forums", query, category, limit)
-
-
-def search_apple_online_urls(query, platform=None):
-    """Generate search URLs for Apple documentation."""
-    return _make_api_call("search_apple_online_urls", query, platform)
-
-def get_framework_info(framework):
-    """Get documentation URL for a framework."""
-    return _make_api_call("get_framework_info", framework)
-
-def search_swift_repos_urls(query):
-    """Generate search URLs for Apple/SwiftLang GitHub repos."""
-    return _make_api_call("search_swift_repos_urls", query)
-
-def fetch_github_file(url):
-    """Fetch source code from GitHub."""
-    return _make_api_call("fetch_github_file", url)
-
-def search_archive(query, platform=None, framework=None, resource_type=None, topic=None, limit=25):
-    """Search Apple's Documentation Archive (legacy library/archive)."""
-    return _make_api_call("search_archive", query, platform, framework, resource_type, topic, limit)
-
-def list_archive_frameworks():
-    """List all frameworks in the Documentation Archive."""
-    return _make_api_call("list_archive_frameworks")
-
-def list_archive_topics():
-    """List all topics in the Documentation Archive."""
-    return _make_api_call("list_archive_topics")
-
-def list_archive_resource_types():
-    """List all resource types in the Documentation Archive."""
-    return _make_api_call("list_archive_resource_types")
-
-def search_compiler_docs(query, limit=25):
-    """Search Swift compiler docs in swiftlang/swift/docs."""
-    return _make_api_call("search_compiler_docs", query, limit)
-
-def search_compiler_docs_text(query, limit=10, max_files=60):
-    """Full-text grep across Swift compiler doc files."""
-    return _make_api_call("search_compiler_docs_text", query, limit, max_files)
-
-def list_compiler_phases():
-    """List Swift compiler pipeline phases."""
-    return _make_api_call("list_compiler_phases")
-
-def get_compiler_phase(name):
-    """Get a single Swift compiler phase by name."""
-    return _make_api_call("get_compiler_phase", name)
-
-def search_wwdc_sessions(query, year=None, limit=25):
-    """Search WWDC sessions by title + description."""
-    return _make_api_call("search_wwdc_sessions", query, year, limit)
-
-def fetch_wwdc_session(session_id):
-    """Fetch markdown notes for a WWDC session."""
-    return _make_api_call("fetch_wwdc_session", session_id)
-
-def search_hig(query, platform=None, limit=25):
-    """Search Human Interface Guidelines topics."""
-    return _make_api_call("search_hig", query, platform, limit)
-
-def fetch_hig(topic):
-    """Fetch HIG topic content by slug or title."""
-    return _make_api_call("fetch_hig", topic)
-
-def list_xcode_release_notes(major=None):
-    """List Xcode release-notes pages."""
-    return _make_api_call("list_xcode_release_notes", major)
-
-def get_xcode_release_notes_url(version):
-    """Resolve an Xcode version to its release-notes URL."""
-    return _make_api_call("get_xcode_release_notes_url", version)
-
-# Create namespace with allowed builtins and API functions
 namespace = {{'__builtins__': ALLOWED_BUILTINS}}
-namespace['fetch_documentation'] = fetch_documentation
-namespace['search_proposals'] = search_proposals
-namespace['get_proposal'] = get_proposal
-namespace['search_swift_forums_urls'] = search_swift_forums_urls
-namespace['search_swift_forums'] = search_swift_forums
-
-namespace['search_apple_online_urls'] = search_apple_online_urls
-namespace['get_framework_info'] = get_framework_info
-namespace['search_swift_repos_urls'] = search_swift_repos_urls
-namespace['fetch_github_file'] = fetch_github_file
-
-namespace['search_archive'] = search_archive
-namespace['list_archive_frameworks'] = list_archive_frameworks
-namespace['list_archive_topics'] = list_archive_topics
-namespace['list_archive_resource_types'] = list_archive_resource_types
-
-namespace['search_compiler_docs'] = search_compiler_docs
-namespace['search_compiler_docs_text'] = search_compiler_docs_text
-namespace['list_compiler_phases'] = list_compiler_phases
-namespace['get_compiler_phase'] = get_compiler_phase
-
-namespace['search_wwdc_sessions'] = search_wwdc_sessions
-namespace['fetch_wwdc_session'] = fetch_wwdc_session
-
-namespace['search_hig'] = search_hig
-namespace['fetch_hig'] = fetch_hig
-
-namespace['list_xcode_release_notes'] = list_xcode_release_notes
-namespace['get_xcode_release_notes_url'] = get_xcode_release_notes_url
+for api_name in {api_names}:
+    namespace[api_name] = make_api(api_name)
 
 # User code execution
 user_output = []
+output_bytes = 0
 original_print = print
 
 def capturing_print(*args, **kwargs):
     """Capture print output."""
+    global output_bytes
     import io
     output = io.StringIO()
     kwargs['file'] = output
     original_print(*args, **kwargs)
-    user_output.append(output.getvalue())
+    value = output.getvalue()
+    output_bytes += len(value.encode("utf-8"))
+    if output_bytes > 65536:
+        raise ValueError("Printed output exceeds 64 KiB; filter before printing")
+    user_output.append(value)
 
 namespace['print'] = capturing_print
+ALLOWED_BUILTINS['print'] = capturing_print
 
 try:
-    exec("""{user_code}""", namespace)
+    exec({user_code}, namespace)
 
     if 'result' in namespace:
         result = namespace['result']
         output = {{"success": True, "result": result, "stdout": "".join(user_output)}}
     else:
-        output = {{"success": True, "result": None, "stdout": "".join(user_output), "warning": "No 'result' variable set"}}
+        output = {{"success": False, "error": "No 'result' variable set", "error_type": "MissingResultError", "stdout": "".join(user_output)}}
 
 except Exception as e:
     output = {{
@@ -280,13 +166,19 @@ except Exception as e:
 
 # Final output marker
 sys.stdout.write("__SANDBOX_COMPLETE__\\n")
-sys.stdout.write(json.dumps(output, default=str) + "\\n")
+try:
+    wire = json.dumps(output, default=str)
+    if len(wire.encode('utf-8')) > {max_output_bytes}:
+        raise ValueError("Result exceeds 1 MiB; filter before returning")
+except (ValueError, TypeError, RecursionError) as e:
+    wire = json.dumps({{"success": False, "error": str(e), "error_type": "OutputError"}})
+sys.stdout.write(wire + "\\n")
 sys.stdout.flush()
 '''
 
     def __init__(
         self,
-        timeout: int = 5,
+        timeout: int = 10,
         max_memory_mb: int = 50,
         python_path: Optional[str] = None,
         api_handlers: Optional[Dict[str, Callable]] = None
@@ -300,6 +192,8 @@ sys.stdout.flush()
             python_path: Path to Python interpreter
             api_handlers: Dict mapping function names to handler callables
         """
+        if not isinstance(timeout, int) or isinstance(timeout, bool) or not 1 <= timeout <= 300:
+            raise ValueError("timeout must be an integer from 1 to 300 seconds")
         self.timeout = timeout
         self.max_memory_mb = max_memory_mb
         self.python_path = python_path or sys.executable
@@ -317,9 +211,9 @@ sys.stdout.flush()
         Returns:
             ExecutionResult with success status, result, and any errors
         """
-        start_time = time.time()
+        start_time = time.monotonic()
         validation_warnings = []
-        handlers = api_handlers or self.api_handlers
+        handlers = self.api_handlers if api_handlers is None else api_handlers
 
         # Step 1: Validate code
         validation = self.validator.validate(code)
@@ -328,55 +222,90 @@ sys.stdout.flush()
                 success=False,
                 error="; ".join(validation.errors),
                 error_type="ValidationError",
-                execution_time_ms=int((time.time() - start_time) * 1000)
+                execution_time_ms=int((time.monotonic() - start_time) * 1000)
             )
         validation_warnings = validation.warnings
 
         # Step 2: Create sandbox script
         try:
-            script = self._create_sandbox_script(code)
+            script = self._create_sandbox_script(code, handlers)
         except Exception as e:
             return ExecutionResult(
                 success=False,
                 error=f"Failed to prepare sandbox: {str(e)}",
                 error_type="PreparationError",
-                execution_time_ms=int((time.time() - start_time) * 1000)
+                execution_time_ms=int((time.monotonic() - start_time) * 1000)
             )
 
         # Step 3: Execute with IPC
         try:
-            result = self._run_with_ipc(script, handlers)
+            result = self._supervise(script, handlers)
             result.validation_warnings = validation_warnings
-            result.execution_time_ms = int((time.time() - start_time) * 1000)
+            result.execution_time_ms = int((time.monotonic() - start_time) * 1000)
             return result
         except subprocess.TimeoutExpired:
             return ExecutionResult(
                 success=False,
                 error=f"Execution timed out after {self.timeout} seconds",
                 error_type="TimeoutError",
-                execution_time_ms=int((time.time() - start_time) * 1000)
+                execution_time_ms=int((time.monotonic() - start_time) * 1000)
             )
         except Exception as e:
             return ExecutionResult(
                 success=False,
                 error=f"Execution failed: {str(e)}",
                 error_type="ExecutionError",
-                execution_time_ms=int((time.time() - start_time) * 1000)
+                execution_time_ms=int((time.monotonic() - start_time) * 1000)
             )
 
-    def _create_sandbox_script(self, code: str) -> str:
-        """Create the sandbox script."""
-        # Escape user code for safe embedding in exec("""...""").
-        # Backslashes first, then triple quotes, then prevent trailing
-        # quotes from merging with the closing """.
-        escaped_code = code.replace('\\', '\\\\').replace('"""', '\\"\\"\\"')
-        while escaped_code.endswith('"') and not escaped_code.endswith('\\"'):
-            escaped_code = escaped_code[:-1] + '\\"'
+    def _supervise(self, script, handlers):
+        # POSIX-only, like resource.setrlimit. Fork preserves injected handlers
+        # for offline tests. The CLI calls this before starting any threads.
+        context = multiprocessing.get_context("fork")
+        receiver, sender = context.Pipe(duplex=False)
+        with tempfile.TemporaryDirectory(prefix="apple-docs-") as directory:
+            worker = context.Process(target=_execute_worker, args=(sender, self, script, handlers, directory))
+            worker.start()
+            sender.close()
+            code_pid = None
+            completed = False
+            deadline = time.monotonic() + self.timeout
+            try:
+                while receiver.poll(max(0, deadline - time.monotonic())):
+                    message = receiver.recv_bytes(MAX_IPC_BYTES)
+                    if message.startswith(b"pid:"):
+                        code_pid = int(message[4:])
+                        continue
+                    completed = True
+                    return ExecutionResult(**json.loads(message))
+                raise subprocess.TimeoutExpired(cmd="documentation worker", timeout=self.timeout)
+            except EOFError:
+                return ExecutionResult(success=False, error="Documentation worker exited without a result", error_type="ProcessError")
+            finally:
+                if completed:
+                    worker.join(timeout=0.2)
+                if code_pid is not None and not completed:
+                    try:
+                        os.kill(code_pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                if worker.is_alive():
+                    worker.terminate()
+                    worker.join(timeout=0.2)
+                    if worker.is_alive():
+                        worker.kill()
+                worker.join()
+                receiver.close()
+                worker.close()
 
+    def _create_sandbox_script(self, code: str, handlers=None) -> str:
         return self.SANDBOX_TEMPLATE.format(
             timeout=self.timeout,
             max_memory_mb=self.max_memory_mb,
-            user_code=escaped_code
+            user_code=repr(code),
+            api_names=repr(list(self.api_handlers if handlers is None else handlers)),
+            max_ipc_bytes=MAX_IPC_BYTES,
+            max_output_bytes=MAX_OUTPUT_BYTES,
         )
 
     def _handle_api_call(self, data: Dict, handlers: Dict[str, Callable]) -> Dict:
@@ -389,11 +318,11 @@ sys.stdout.flush()
             return {"error": f"Unknown API function: {func_name}"}
 
         try:
-            return {"result": handlers[func_name](*args)}
+            return {"result": handlers[func_name](*args, **call_info.get("kwargs", {}))}
         except Exception as e:
             return {"error": str(e)}
 
-    def _run_with_ipc(self, script: str, handlers: Dict[str, Callable]) -> ExecutionResult:
+    def _run_with_ipc(self, script: str, handlers: Dict[str, Callable], directory: str) -> ExecutionResult:
         """
         Run sandbox with IPC for API calls.
 
@@ -405,7 +334,7 @@ sys.stdout.flush()
             ExecutionResult
         """
         # Write script to temp file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, dir=directory) as f:
             f.write(script)
             script_path = f.name
 
@@ -416,18 +345,21 @@ sys.stdout.flush()
             env = {
                 'PATH': os.environ.get('PATH', ''),
                 'PYTHONPATH': '',
-                'HOME': os.environ.get('HOME', ''),
+                'HOME': directory,
             }
 
             # Start subprocess with pipes for IPC
             proc = subprocess.Popen(
-                [self.python_path, script_path],
+                [self.python_path, "-I", "-B", script_path],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=env
+                env=env,
+                cwd=directory
             )
+
+            self._worker_sender.send_bytes(f"pid:{proc.pid}".encode())
 
             # Process IPC until completion or timeout
             deadline = time.time() + self.timeout
@@ -438,14 +370,16 @@ sys.stdout.flush()
                     proc.kill()
                     raise subprocess.TimeoutExpired(cmd=script_path, timeout=self.timeout)
 
-                line = proc.stdout.readline()
+                line = proc.stdout.readline(MAX_IPC_BYTES + 1)
                 if not line:
                     break
 
+                if len(line.encode("utf-8")) > MAX_IPC_BYTES:
+                    raise ValueError("Sandbox message exceeds IPC limit")
                 line = line.strip()
 
                 if line == "__SANDBOX_COMPLETE__":
-                    result_line = proc.stdout.readline()
+                    result_line = proc.stdout.readline(MAX_IPC_BYTES + 1)
                     break
 
                 # Try to parse as API call
@@ -460,7 +394,10 @@ sys.stdout.flush()
                 if api_call:
                     api_calls_made += 1
                     response = self._handle_api_call(api_call, handlers)
-                    proc.stdin.write(json.dumps(response) + "\n")
+                    wire = json.dumps(response)
+                    if len(wire.encode("utf-8")) > MAX_IPC_BYTES:
+                        wire = json.dumps({"error": "API response exceeds 8 MiB IPC limit"})
+                    proc.stdin.write(wire + "\n")
                     proc.stdin.flush()
                 else:
                     collected_output.append(line)
@@ -502,7 +439,35 @@ sys.stdout.flush()
                 )
 
         finally:
+            if "proc" in locals():
+                if proc.poll() is None:
+                    proc.kill()
+                proc.wait()
+                for stream in (proc.stdin, proc.stdout, proc.stderr):
+                    stream.close()
             try:
                 os.unlink(script_path)
             except OSError:
                 pass
+
+
+MAX_OUTPUT_BYTES = 1024 * 1024
+MAX_IPC_BYTES = 8 * 1024 * 1024
+
+
+def _execute_worker(sender, executor, script, handlers, directory):
+    executor._worker_sender = sender
+    def terminate(signum, frame):
+        raise SystemExit(0)
+    signal.signal(signal.SIGTERM, terminate)
+    try:
+        result = executor._run_with_ipc(script, handlers, directory)
+    except Exception as exc:
+        result = ExecutionResult(success=False, error=str(exc), error_type=type(exc).__name__)
+    try:
+        wire = json.dumps(result.to_dict()).encode("utf-8")
+        if len(wire) > MAX_IPC_BYTES:
+            wire = json.dumps({"success": False, "error": "Worker output exceeds limit", "error_type": "OutputError"}).encode()
+        sender.send_bytes(wire)
+    finally:
+        sender.close()

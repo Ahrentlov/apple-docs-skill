@@ -4,6 +4,8 @@ Shared helpers for the API modules.
 
 import json
 import urllib.request
+import urllib.parse
+import urllib.error
 from typing import Any, Callable, Dict, List, Optional
 
 
@@ -111,7 +113,48 @@ def fetch_json(
         headers.update(extra_headers)
     try:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            return decoder(response.read().decode('utf-8'))
+        with open_url(req, timeout=timeout) as response:
+            return decoder(read_bounded(response).decode('utf-8'))
     except Exception:
         return None
+
+
+MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+_ALLOWED_HOSTS = {"developer.apple.com", "download.swift.org", "www.swift.org", "swift.org", "forums.swift.org", "api.github.com", "raw.githubusercontent.com", "github.com"}
+
+
+def validate_fetch_url(url):
+    """Validate initial requests and redirects, including GitHub repository scope."""
+    parsed = urllib.parse.urlsplit(url)
+    if (parsed.scheme != "https" or parsed.hostname not in _ALLOWED_HOSTS
+            or parsed.username or parsed.password or parsed.port not in (None, 443)):
+        raise ValueError("Unsupported documentation URL")
+    path = urllib.parse.unquote(parsed.path)
+    if any(part in (".", "..") for part in path.split("/")) or "\\" in path or any(ord(c) < 32 for c in url + path):
+        raise ValueError("Invalid documentation path")
+    parts = path.strip("/").split("/")
+    if parsed.hostname == "api.github.com":
+        if not parts or parts.pop(0) != "repos":
+            raise ValueError("Only GitHub repository API requests are supported")
+    if parsed.hostname in {"api.github.com", "github.com", "raw.githubusercontent.com"}:
+        if len(parts) < 2 or not (parts[0] in {"apple", "swiftlang"} or parts[:2] == ["wwdcnotes", "wwdcnotes"]):
+            raise ValueError("Unsupported GitHub organization")
+    return url
+
+
+class _DocumentationRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        validate_fetch_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def open_url(request, timeout=15):
+    validate_fetch_url(request.full_url if isinstance(request, urllib.request.Request) else request)
+    return urllib.request.build_opener(_DocumentationRedirectHandler()).open(request, timeout=timeout)
+
+
+def read_bounded(response, limit=MAX_RESPONSE_BYTES):
+    body = response.read(limit + 1)
+    if len(body) > limit:
+        raise ValueError(f"Response exceeds {limit}-byte limit")
+    return body
