@@ -48,9 +48,18 @@ walk on title-substring lookups.
 
 **Errors:** `empty_topic`, `topic_not_found`, `ambiguous_topic` (with `candidates` list), plus `fetch_documentation`'s error variants.
 
+**Markdown alternative:** pass a topic's page URL to `fetch_markdown` for Apple's
+own Markdown rendering, typically a third of the JSON size. It keeps headings,
+prose, lists, and links but not the `content_outline` or `content_sections`
+structure. Section and line selectors work the same way as on reference pages;
+see [apple-docs.md](apple-docs.md).
+
 **Example:**
 ```python
 result = fetch_hig("buttons")
 # or by title substring
 result = fetch_hig("Dark Mode")
+# or the compact Markdown rendering of one section
+result = fetch_markdown("https://developer.apple.com/design/human-interface-guidelines/buttons",
+                        section="Best practices")
 ```

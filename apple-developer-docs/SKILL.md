@@ -4,7 +4,7 @@ description: "Look up Apple API documentation, Human Interface Guidelines, Xcode
 license: MIT
 metadata:
   author: Patrick Ahrentløv
-  version: 1.8.0
+  version: 1.9.0
 ---
 
 # Apple Developer Docs
@@ -34,6 +34,7 @@ The default wall timeout is 10 seconds, including network calls. Use 60 seconds 
 | Need | API and reference |
 |---|---|
 | API declaration, availability, parameters, related symbols | `fetch_documentation(url, section=None, start_line=None, end_line=None, max_lines=200)` — [Apple docs](references/apple-docs.md) |
+| Compact Markdown of a documentation or HIG page | `fetch_markdown(url, section=None, start_line=None, end_line=None, max_lines=200)` — [Apple docs](references/apple-docs.md) |
 | Find an Apple documentation URL | `get_framework_info(framework)` and `search_apple_online_urls(query, platform=None)` — [discovery](references/apple-docs.md#discovery-workflow) |
 | Language proposal metadata or status | `search_proposals(feature, version=None, status=None, limit=20, offset=0)`, `get_proposal(se_number)` — [Swift Evolution](references/swift-evolution.md) |
 | Discussions and pitches | `search_swift_forums(query, category=None, limit=20)`, `search_swift_forums_urls(query, category=None)` — [Forums](references/swift-evolution.md) |
@@ -46,7 +47,7 @@ The default wall timeout is 10 seconds, including network calls. Use 60 seconds 
 | File changes between revisions | `compare_github_file(url, base_ref, head_ref, context_lines=3, max_diff_lines=400)` — [repositories](references/swift-repos.md) |
 | A particular Xcode release | `list_xcode_release_notes(major=None)`, `get_xcode_release_notes_url(version)`, then `fetch_documentation(url, section=None, start_line=None, end_line=None, max_lines=200)` — [release notes](references/xcode-releases.md) |
 
-Use section or line selectors to keep passages bounded and retain the returned citation and coverage fields. Compiler searches resolve `ref` to one commit; keep that revision when reading results. Symbol search traverses reachable topic links within a page budget; an empty partial result cannot establish that a symbol does not exist. Revision comparison reads the same file path at two commits and does not detect renames.
+Use section or line selectors to keep passages bounded and retain the returned citation and coverage fields. `fetch_markdown` returns Apple's own Markdown rendering of the same `/documentation/` and HIG pages, usually a fraction of the size of the DocC JSON; it carries a metadata block with title, role, and availability strings but not the structured declaration, parameters, relationships, or `content_outline`, which only `fetch_documentation` provides. Compiler searches resolve `ref` to one commit; keep that revision when reading results. Symbol search traverses reachable topic links within a page budget; an empty partial result cannot establish that a symbol does not exist. Revision comparison reads the same file path at two commits and does not detect renames.
 
 Read the reference for the source you need. The `*_urls` helpers generate links; they do not perform searches. Open those links or run a scoped query with an available browser/search tool. If none is available, report that discovery is limited rather than inventing results. Archive results are links to legacy HTML, which `fetch_documentation` cannot parse.
 

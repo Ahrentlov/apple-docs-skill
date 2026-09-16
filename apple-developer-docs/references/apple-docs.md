@@ -78,6 +78,78 @@ release-note issues; a child named “Resolved Issues” alone is ambiguous.
 
 ---
 
+## fetch_markdown(url: str, section=None, start_line=None, end_line=None, max_lines=200) -> Dict
+
+Fetch Apple's Markdown rendering of a `/documentation/` or
+`/design/human-interface-guidelines/` page. Apple serves this next to the DocC
+JSON that `fetch_documentation` parses. The function accepts the same page URLs
+and maps them itself:
+
+- `https://developer.apple.com/documentation/<path>` → `https://developer.apple.com/documentation/<path>.md`
+- `https://developer.apple.com/design/human-interface-guidelines/<slug>` → `https://developer.apple.com/tutorials/data/design/human-interface-guidelines/<slug>.md`
+
+HIG pages only answer under the `/tutorials/data/` path (the bare `.md` form is a
+404); reference pages answer on the public URL (the `/tutorials/data/` form
+redirects there). Pass the normal page URL and let the function choose.
+
+Measured on 2026-09-16, the Markdown of `swiftui/view` was 18 KB against 150 KB
+of raw JSON and a 34 KB `fetch_documentation` response; the HIG `buttons` page was
+24 KB against 70 KB and 41 KB. Sizes vary by page; treat these as indicative.
+
+**What it does not contain:** the structured `declaration`, `parameters`,
+`availability` dicts, `relationships`, `see_also`, `symbols`, and `content_outline`
+fields. Availability appears only as strings inside `metadata` (for example
+`"iOS: 13.0.0 -"`). Links are site-relative paths and images are left as Markdown
+image references. Use `fetch_documentation` when structured fields matter. The
+endpoint ignores `?language=`; non-Swift variants are rejected as with
+`fetch_documentation`.
+
+**Returns:**
+```python
+{
+    "title": str,
+    "url": str,               # canonical page URL
+    "markdown_url": str,      # URL actually fetched
+    "metadata": dict,         # Apple's leading metadata block: title, framework, role, documentType, availability, symbol
+    "size": int,              # bytes downloaded
+    "total_lines": int,       # lines of Markdown after the metadata block
+    "line_basis": str,
+    "content": str,           # wrapped in external-content markers
+    "excerpt_partial": bool,
+    # with section/line selectors, also:
+    "start_line": int, "end_line": int, "returned_lines": int,
+    "selection_end_line": int, "selection_truncated": bool, "next_start_line": int | None,
+    "section": {"title": str, "level": int, "path": list[str], "start_line": int, "end_line": int},
+    "citation_url": str,      # page URL plus a DocC-style heading fragment when one can be derived
+}
+```
+
+Without selectors the full Markdown is returned; `max_lines` bounds selected
+passages only (1..1000, default 200). `section` matches a heading title exactly
+(case-insensitive) or the full `Page title > Parent > Heading` path; a partial
+path such as `Platform considerations > macOS` is `section_not_found`, and the
+error lists the available headings as `candidates`. Line numbers are lines of
+the Markdown text, not of the DocC outline that `fetch_documentation` renders, so
+the two functions' line selectors are not interchangeable.
+
+**Errors:** `invalid_input`, `invalid_url`, `invalid_selection`,
+`unsupported_language`, `not_found`, `no_markdown` (HTTP 200 without a Markdown
+content type; fall back to `fetch_documentation`), `http_error`, `timeout`,
+`network_error`, `fetch_failed`, `section_not_found`, `ambiguous_section`,
+`line_out_of_range`.
+
+**Example:**
+```python
+doc = fetch_markdown("https://developer.apple.com/design/human-interface-guidelines/buttons",
+                     section="Best practices")
+if 'error' in doc:
+    result = doc
+else:
+    result = {k: doc[k] for k in ('title', 'citation_url', 'content', 'excerpt_partial', 'next_start_line')}
+```
+
+---
+
 ## search_apple_online_urls(query: str, platform: str = None) -> Dict
 
 Generate search URLs for Apple documentation (returns URLs only — does not fetch).

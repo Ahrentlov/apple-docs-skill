@@ -13,8 +13,10 @@ and bounded comparisons of a file between two revisions. See the
 ## Sources
 
 - **Apple documentation:** DocC declarations, availability, deprecation,
-  discussion, parameters, return values, related symbols, and section content.
-- **Human Interface Guidelines:** topic discovery and structured page content.
+  discussion, parameters, return values, related symbols, and section content,
+  plus Apple's compact Markdown rendering of any page.
+- **Human Interface Guidelines:** topic discovery, structured page content, and
+  the Markdown rendering served under `/tutorials/data/`.
 - **Xcode release notes:** version discovery and DocC page fetching.
 - **Documentation Archive:** title/facet search over legacy guides, Tech Notes,
   Q&As, and sample-code links. Read linked HTML with a browser tool.
@@ -53,6 +55,7 @@ programming question. Example requests:
 - “Find forum discussion around SE-0461.”
 - “Search WWDC sessions on concurrency and read the top session's notes.”
 - “Show me the HIG topic on Dark Mode.”
+- “Read the Best practices section of the HIG Buttons page as Markdown.”
 - “Fetch the Swift source for Task.”
 - “Find archived Core Data sample code.”
 - “Search compiler docs for reborrow.”
@@ -111,6 +114,8 @@ and [sandbox.md](apple-developer-docs/references/sandbox.md) for the actual cont
 - DocC rendering covers common text, code, lists, tables, and cross-references.
   `unrendered_types` identifies unsupported content; consult the original page
   when it matters. Non-Swift language variants require the original page.
+- Markdown renderings are prose-first: they omit the structured declaration,
+  parameter, and relationship fields and carry availability only as strings.
 - HIG discovery walks a bounded topic index; `platform` is an annotation, not a
   filter. Partial fetches are disclosed and are not cached as complete indexes.
 - Compiler text search has a file budget and per-file size cap. Failures and

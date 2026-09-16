@@ -21,6 +21,7 @@ Available APIs in the sandbox (see SKILL.md / references/ for full signatures):
 
 Apple Documentation
 - fetch_documentation(url, section?, start_line?, end_line?, max_lines?) - Parse any /documentation/ or /design/human-interface-guidelines/ page
+- fetch_markdown(url, section?, start_line?, end_line?, max_lines?)      - Apple's compact Markdown rendering of the same pages
 - search_apple_online_urls(query, ...)  - Apple docs search URLs
 - get_framework_info(framework)         - Framework documentation URL
 

@@ -434,6 +434,146 @@ def fetch_documentation(url: str, section=None, start_line=None, end_line=None, 
     return mark_untrusted(parsed, "developer.apple.com")
 
 
+# Apple serves a Markdown rendering of DocC pages next to the JSON. Reference pages
+# take a bare `.md` suffix on the public URL; HIG pages only answer under the
+# `/tutorials/data/` data path (the bare form is a 404, and the data-path form of a
+# reference page 301s back to the public URL).
+_MARKDOWN_URL_TEMPLATES = {
+    "documentation": "https://developer.apple.com/documentation/{path}.md",
+    "design/human-interface-guidelines": "https://developer.apple.com/tutorials/data/design/human-interface-guidelines/{path}.md",
+}
+
+# Leading `<!-- { ...json... } -->` block that Apple prepends to every Markdown page.
+_MARKDOWN_FRONT_MATTER = re.compile(r'\A\s*<!--\s*(\{.*?\})\s*-->[ \t]*\r?\n?', re.DOTALL)
+
+
+def fetch_markdown(url: str, section=None, start_line=None, end_line=None, max_lines=200) -> Dict:
+    """Fetch Apple's Markdown rendering of a documentation or HIG page.
+
+    Accepts the same URLs as `fetch_documentation`. The Markdown representation is
+    a compact, prose-first rendering of the same DocC page: for a typical page it is
+    roughly 3-8x smaller than the raw DocC JSON and about half the size of the
+    structured `fetch_documentation` response. It carries a metadata comment (title,
+    framework, role, availability strings) but not the structured declaration,
+    parameter, relationship, or `content_outline` fields; use `fetch_documentation`
+    when those matter.
+
+    Args:
+        url: A `developer.apple.com/documentation/...` or
+            `developer.apple.com/design/human-interface-guidelines/...` page URL.
+        section: Markdown heading title or qualified `Parent > Child` path.
+        start_line, end_line: Inclusive 1-based lines of the Markdown text
+            (after the metadata comment); mutually exclusive with `section`.
+        max_lines: Selected passage limit (1..1000); does not clip unselected reads.
+
+    Returns:
+        ``title``, ``url``, ``markdown_url``, ``metadata``, ``size``, ``total_lines``,
+        ``line_basis``, wrapped ``content``, ``excerpt_partial``, and, for selected
+        reads, the `select_text` fields plus ``citation_url``.
+
+    Errors:
+        ``invalid_input``, ``invalid_url``, ``invalid_selection``,
+        ``unsupported_language``, ``not_found``, ``no_markdown`` (page exists but has
+        no Markdown rendering; use `fetch_documentation`), ``http_error``,
+        ``timeout``, ``network_error``, ``fetch_failed``, ``section_not_found``,
+        ``ambiguous_section``, ``line_out_of_range``.
+    """
+    err = require_string(url, 'url')
+    if err: return err
+    err = validate_selection(start_line, end_line, section, max_lines)
+    if err: return err
+
+    try:
+        validate_fetch_url(url)
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError as exc:
+        return {"error": "invalid_url", "message": str(exc), "url": url}
+    language = urllib.parse.parse_qs(parsed.query).get("language", ["swift"])[0]
+    if language != "swift":
+        # The .md endpoint ignores ?language and always serves the Swift rendering.
+        return {"error": "unsupported_language", "message": "Only the Swift Markdown representation is served; open the page for other languages", "url": url}
+    clean_url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, '', ''))
+
+    markdown_url: Optional[str] = None
+    for prefix, splitter, segment in _DOC_URL_PREFIXES:
+        if clean_url.startswith(prefix):
+            path = clean_url.split(splitter, 1)[1].strip('/')
+            if path:
+                markdown_url = _MARKDOWN_URL_TEMPLATES[segment].format(path=path)
+            break
+    if markdown_url is None:
+        return {
+            "error": "invalid_url",
+            "message": "URL must be a page under developer.apple.com/documentation/ or /design/human-interface-guidelines/",
+            "url": url,
+        }
+
+    req = urllib.request.Request(markdown_url, headers={
+        'User-Agent': UA_APPLE_BROWSER,
+        'Accept': 'text/markdown, text/plain;q=0.8, */*;q=0.1',
+    })
+    try:
+        with open_url(req, timeout=10) as response:
+            content_type = response.headers.get('Content-Type', '')
+            raw = read_bounded(response)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return {"error": "not_found", "message": f"No documentation at {url}", "url": url, "markdown_url": markdown_url}
+        return {"error": "http_error", "status": e.code, "message": f"HTTP {e.code}: {e.reason}", "url": url, "markdown_url": markdown_url}
+    except urllib.error.URLError as e:
+        reason = e.reason
+        if isinstance(reason, (socket.timeout, TimeoutError)):
+            return {"error": "timeout", "message": "Request exceeded 10s", "url": url}
+        return {"error": "network_error", "reason": type(reason).__name__, "message": str(reason), "url": url}
+    except (TimeoutError, socket.timeout):
+        return {"error": "timeout", "message": "Request exceeded 10s", "url": url}
+    except (ValueError, OSError) as exc:
+        return {"error": "fetch_failed", "message": str(exc), "url": url}
+
+    if 'markdown' not in content_type.lower():
+        return {"error": "no_markdown", "message": "Page has no Markdown rendering; use fetch_documentation",
+                "content_type": content_type, "url": clean_url, "markdown_url": markdown_url}
+
+    text = raw.decode('utf-8', errors='replace')
+    metadata: Dict = {}
+    match = _MARKDOWN_FRONT_MATTER.match(text)
+    if match:
+        try:
+            parsed_meta = json.loads(match[1])
+        except json.JSONDecodeError:
+            parsed_meta = None
+        if isinstance(parsed_meta, dict):
+            metadata = parsed_meta
+            text = text[match.end():]
+
+    heading = re.search(r'^# +(.+?)\s*$', text, re.MULTILINE)
+    result: Dict = {
+        "title": metadata.get("title") or (heading[1] if heading else ""),
+        "url": clean_url,
+        "markdown_url": markdown_url,
+        "metadata": metadata,
+        "size": len(raw),
+        "total_lines": len(text.splitlines()),
+        "line_basis": "lines of the Markdown rendering after its leading metadata comment; not source or JSON-outline lines",
+    }
+    if section is not None or start_line is not None or end_line is not None:
+        selection = select_text(text, start_line, end_line, section, max_lines=max_lines)
+        if 'error' in selection:
+            return dict(selection, url=clean_url, markdown_url=markdown_url)
+        result.update(selection)
+        citation = clean_url
+        selected = selection.get('section')
+        if selected and re.fullmatch(r'[A-Za-z0-9 ,.-]+', selected['title']):
+            # DocC fragments are the heading with whitespace collapsed to hyphens
+            # (e.g. "Best practices" -> #Best-practices); only emit when that rule is safe.
+            citation += '#' + urllib.parse.quote(re.sub(r'\s+', '-', selected['title'].strip()), safe='-._~')
+        result['citation_url'] = citation
+    else:
+        result['content'] = text
+        result['excerpt_partial'] = False
+    return mark_untrusted(result, "developer.apple.com", wrap_field='content')
+
+
 def search_apple_online_urls(query: str, platform: Optional[str] = None) -> Dict:
     """Generate search URLs for Apple documentation."""
     err = require_string(query, 'query')
