@@ -18,19 +18,7 @@ from ._utils import validate_fetch_url, open_url, read_bounded, UA_APPLE_BROWSER
 
 
 class AppleDocsAPI:
-    """Interface to Apple Developer documentation via JSON API."""
-
-    def _fetch_json(self, url: str) -> Dict:
-        """Fetch JSON. Raises on any failure — callers handle exceptions."""
-        req = urllib.request.Request(
-            url,
-            headers={
-                'User-Agent': UA_APPLE_BROWSER,
-                'Accept': 'application/json'
-            }
-        )
-        with open_url(req, timeout=10) as response:
-            return json.loads(read_bounded(response))
+    """Parser for Apple's DocC JSON (fetch_documentation format='json')."""
 
     def _extract_declaration(self, sections: list) -> str:
         """Extract declaration text from primaryContentSections."""
@@ -319,89 +307,131 @@ class AppleDocsAPI:
 _api = AppleDocsAPI()
 
 
-_DOC_URL_PREFIXES = (
-    ("https://developer.apple.com/documentation/", "/documentation/", "documentation"),
-    ("https://developer.apple.com/design/human-interface-guidelines/", "/design/human-interface-guidelines/", "design/human-interface-guidelines"),
+DOC_FORMATS = ('markdown', 'json')
+
+# (page prefix, Markdown base, JSON base, whether the bare prefix is itself a page).
+# Apple serves /documentation pages as <page>.md but HIG Markdown only under tutorials/data;
+# the HIG root is a page, while /documentation has no Markdown rendering.
+_DOC_SOURCES = (
+    ("https://developer.apple.com/documentation/",
+     "https://developer.apple.com/documentation",
+     "https://developer.apple.com/tutorials/data/documentation", False),
+    ("https://developer.apple.com/design/human-interface-guidelines/",
+     "https://developer.apple.com/tutorials/data/design/human-interface-guidelines",
+     "https://developer.apple.com/tutorials/data/design/human-interface-guidelines", True),
 )
 
 
-def fetch_documentation(url: str, section=None, start_line=None, end_line=None, max_lines=200) -> Dict:
-    """Fetch and parse documentation from Apple Developer website.
-
-    Accepts URLs from `developer.apple.com/documentation/` or
-    `developer.apple.com/design/human-interface-guidelines/` (HIG uses the
-    same DocC JSON schema).
-
-    Optional section selects a heading and its descendants. Line bounds refer
-    to rendered lines within that selection, capped by max_lines (1..1000).
-    Without selectors, returns the full structured document.
-
-    On failure, returns a dict with an ``error`` key identifying the cause:
-      * ``invalid_input`` — `url` was not a string
-      * ``invalid_url`` — URL doesn't match an accepted developer.apple.com prefix
-      * ``not_found``  — page doesn't exist (HTTP 404)
-      * ``http_error`` — other HTTP status (includes ``status`` field)
-      * ``timeout``    — request exceeded 10s
-      * ``network_error`` — DNS/connection/reset/SSL failure (includes ``reason`` field)
-      * ``invalid_json`` — response wasn't valid JSON
-    """
-    err = require_string(url, 'url')
-    if err: return err
-
+def validate_documentation_request(section, start_line, end_line, max_lines, format) -> Optional[Dict]:
+    """Validate fetch_documentation's selector and format arguments before any network work."""
+    if format not in DOC_FORMATS:
+        return {"error": "invalid_input", "message": "format must be 'markdown' or 'json'"}
+    # Unlike fetch_github_file, a section may be combined with line bounds (lines are section-relative).
     err = validate_selection(start_line, end_line, None, max_lines)
     if not err and section is not None:
         err = validate_selection(None, None, section, max_lines)
-    if err: return err
+    return err
 
-    # Drop fragment + query before path extraction; both 404 the JSON endpoint.
+
+def _resolve_page(url: str):
+    """Return ((canonical URL, Markdown URL, JSON URL), None) or (None, error dict)."""
     try:
         validate_fetch_url(url)
         parsed = urllib.parse.urlsplit(url)
     except ValueError as exc:
-        return {"error": "invalid_url", "message": str(exc), "url": url}
+        return None, {"error": "invalid_url", "message": str(exc), "url": url}
     language = urllib.parse.parse_qs(parsed.query).get("language", ["swift"])[0]
     if language != "swift":
-        return {"error": "unsupported_language", "message": "Only the default Swift DocC representation is supported; open the page for other languages", "url": url}
-    clean_url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, '', ''))
+        return None, {"error": "unsupported_language", "message": "Only the default Swift DocC representation is supported; open the page for other languages", "url": url}
+    # Fragments, queries, and trailing slashes are not part of the page identity.
+    clean_url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip('/'), '', ''))
+    for prefix, md_base, json_base, root_is_page in _DOC_SOURCES:
+        if (clean_url + '/').startswith(prefix):
+            path = clean_url[len(prefix):]
+            if path or root_is_page:
+                suffix = f"/{path}" if path else ""
+                return (clean_url, f"{md_base}{suffix}.md", f"{json_base}{suffix}.json"), None
+    return None, {
+        "error": "invalid_url",
+        "message": "URL must be a page under developer.apple.com/documentation/ or /design/human-interface-guidelines",
+        "url": url,
+    }
 
-    json_path_prefix: Optional[str] = None
-    path: Optional[str] = None
-    for prefix, splitter, json_segment in _DOC_URL_PREFIXES:
-        if clean_url.startswith(prefix):
-            path = clean_url.split(splitter, 1)[1].rstrip('/')
-            json_path_prefix = json_segment
-            break
 
-    if path is None or json_path_prefix is None:
-        return {
-            "error": "invalid_url",
-            "message": "URL must be from developer.apple.com/documentation/ or /design/human-interface-guidelines/",
-            "url": url,
-        }
-
-    json_url = f"https://developer.apple.com/tutorials/data/{json_path_prefix}/{path}.json"
-
+def _fetch_page(fetch_url: str, url: str, accept: str):
+    """Return ((body bytes, content type), None) or (None, error dict) with the documented error codes."""
     try:
-        data = _api._fetch_json(json_url)
+        req = urllib.request.Request(fetch_url, headers={'User-Agent': UA_APPLE_BROWSER, 'Accept': accept})
+        with open_url(req, timeout=10) as response:
+            return (read_bounded(response), response.headers.get_content_type()), None
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            return {"error": "not_found", "message": f"No documentation at {url}", "url": url}
-        return {"error": "http_error", "status": e.code, "message": f"HTTP {e.code}: {e.reason}", "url": url}
+            return None, {"error": "not_found", "message": f"No documentation at {url}", "url": url}
+        return None, {"error": "http_error", "status": e.code, "message": f"HTTP {e.code}: {e.reason}", "url": url}
     except urllib.error.URLError as e:
         reason = e.reason
         if isinstance(reason, (socket.timeout, TimeoutError)):
-            return {"error": "timeout", "message": "Request exceeded 10s", "url": url}
-        return {"error": "network_error", "reason": type(reason).__name__, "message": str(reason), "url": url}
-    except json.JSONDecodeError as e:
-        return {"error": "invalid_json", "message": str(e), "url": url}
-
+            return None, {"error": "timeout", "message": "Request exceeded 10s", "url": url}
+        return None, {"error": "network_error", "reason": type(reason).__name__, "message": str(reason), "url": url}
     except (TimeoutError, socket.timeout):
-        return {"error": "timeout", "message": "Request exceeded 10s", "url": url}
+        return None, {"error": "timeout", "message": "Request exceeded 10s", "url": url}
     except (ValueError, OSError) as exc:
-        return {"error": "fetch_failed", "message": str(exc), "url": url}
+        return None, {"error": "fetch_failed", "message": str(exc), "url": url}
+
+
+def _markdown_documentation(md_url: str, clean_url: str, section, start_line, end_line, max_lines) -> Dict:
+    """Fetch Apple's Markdown rendering, split off its metadata comment, and optionally select an excerpt."""
+    fetched, err = _fetch_page(md_url, clean_url, 'text/markdown')
+    if err: return err
+    body, content_type = fetched
+    if content_type != 'text/markdown':
+        return {"error": "invalid_schema", "message": f"Expected text/markdown, got {content_type}", "url": clean_url}
+    text = body.decode('utf-8', errors='replace')
+    metadata = {}
+    match = re.match(r'\s*<!--(.*?)-->\s*', text, re.S)
+    if match:
+        try:
+            metadata = json.loads(match[1])
+        except ValueError:
+            pass
+        if not isinstance(metadata, dict):
+            metadata = {}
+        text = text[match.end():]
+    title = metadata.get('title')
+    result = {"title": title if isinstance(title, str) else '', "url": clean_url, "markdown_url": md_url, "metadata": metadata}
+    if section is None and start_line is None and end_line is None:
+        result['content'] = text
+        return mark_untrusted(result, "developer.apple.com", wrap_field='content')
+    heading = None
+    if section is not None:
+        # Resolve the section first so line bounds are relative to it, as in the JSON format.
+        found = select_text(text, section=section, max_lines=1)
+        if 'error' in found:
+            return dict(found, url=clean_url)
+        heading = found['section']
+        text = '\n'.join(text.splitlines()[heading['start_line'] - 1:heading['end_line']])
+    selection = select_text(text, start_line, end_line, None, max_lines)
+    if 'error' in selection:
+        return dict(selection, url=clean_url)
+    result.update(selection)
+    if heading:
+        result.update({'section': heading, 'excerpt_partial': True})
+    result.update({'citation_url': clean_url,
+                   'line_basis': 'Markdown lines within the selected section' if heading else 'Markdown lines after the metadata comment'})
+    return mark_untrusted(result, "developer.apple.com", wrap_field='content')
+
+
+def _json_documentation(json_url: str, clean_url: str, section, start_line, end_line, max_lines) -> Dict:
+    """Fetch and parse the DocC JSON, optionally selecting from its rendered outline."""
+    fetched, err = _fetch_page(json_url, clean_url, 'application/json')
+    if err: return err
+    try:
+        data = json.loads(fetched[0])
+    except ValueError as e:  # JSONDecodeError, or UnicodeDecodeError for non-UTF-8 bytes
+        return {"error": "invalid_json", "message": str(e), "url": clean_url}
 
     if not isinstance(data, dict) or not isinstance(data.get("metadata"), dict):
-        return {"error": "invalid_schema", "message": "Expected a DocC document with metadata", "url": url}
+        return {"error": "invalid_schema", "message": "Expected a DocC document with metadata", "url": clean_url}
     parsed = _api._parse_documentation_json(data)
     parsed["url"] = clean_url
     parsed["json_url"] = json_url
@@ -432,6 +462,45 @@ def fetch_documentation(url: str, section=None, start_line=None, end_line=None, 
                        'excerpt_partial': True})
         return mark_untrusted(parsed, 'developer.apple.com', wrap_field='content')
     return mark_untrusted(parsed, "developer.apple.com")
+
+
+def fetch_documentation(url: str, section=None, start_line=None, end_line=None, max_lines=200, format='markdown') -> Dict:
+    """Fetch documentation from the Apple Developer website.
+
+    Accepts pages under `developer.apple.com/documentation/` and
+    `developer.apple.com/design/human-interface-guidelines` (including its root).
+
+    format='markdown' (default) returns Apple's Markdown rendering of the page
+    in `content`, with the page's metadata comment parsed into `metadata`.
+    format='json' parses the DocC JSON into structured fields (declaration,
+    parameters, content_outline, symbols, ...).
+
+    Optional section selects a heading and its descendants. Line bounds are
+    relative to that selection (or the whole page), capped by max_lines (1..1000).
+    Without selectors, returns the full document.
+
+    On failure, returns a dict with an ``error`` key identifying the cause:
+      * ``invalid_input``: `url` was not a string, or `format` is unknown
+      * ``invalid_selection``: bad section / line / max_lines arguments
+      * ``invalid_url``: URL isn't a page under an accepted developer.apple.com prefix
+      * ``unsupported_language``: a non-Swift ``language`` query
+      * ``not_found``: page doesn't exist (HTTP 404)
+      * ``http_error``: other HTTP status (includes ``status`` field)
+      * ``timeout``: request exceeded 10s
+      * ``network_error``: DNS/connection/reset/SSL failure (includes ``reason`` field)
+      * ``fetch_failed``: response-size limit or other fetch failure
+      * ``invalid_json``: response wasn't valid JSON (format='json')
+      * ``invalid_schema``: not a DocC document (JSON) or not text/markdown (Markdown)
+      * ``section_not_found`` / ``ambiguous_section`` / ``line_out_of_range``: selection failed
+    """
+    err = require_string(url, 'url') or validate_documentation_request(section, start_line, end_line, max_lines, format)
+    if err: return err
+    urls, err = _resolve_page(url)
+    if err: return err
+    clean_url, md_url, json_url = urls
+    if format == 'markdown':
+        return _markdown_documentation(md_url, clean_url, section, start_line, end_line, max_lines)
+    return _json_documentation(json_url, clean_url, section, start_line, end_line, max_lines)
 
 
 def search_apple_online_urls(query: str, platform: Optional[str] = None) -> Dict:
@@ -481,7 +550,7 @@ def search_symbols(framework: str, query: str, limit=20, max_pages=20) -> Dict:
     while queue and attempted < max_pages and len(matches) < limit:
         url = queue.pop(0)
         attempted += 1
-        page = fetch_documentation(url)
+        page = fetch_documentation(url, format='json')
         if 'error' in page:
             failures.append({'url': url, 'error': page['error']})
             continue

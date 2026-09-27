@@ -2,16 +2,15 @@
 Human Interface Guidelines API
 ==============================
 
-Search and fetch Apple's Human Interface Guidelines. Backed by the same DocC
-JSON schema Apple uses for `/documentation/` — `fetch_documentation` does the
-heavy lifting; this module adds discovery and a topic index.
+Search and fetch Apple's Human Interface Guidelines. Discovery walks the DocC
+JSON topic tree; `fetch_documentation` fetches page content (Markdown by default).
 """
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 
 from ._utils import all_terms_match, clamp_limit, fetch_json, require_string, mark_untrusted
-from .apple_docs import fetch_documentation
+from .apple_docs import fetch_documentation, validate_documentation_request
 
 
 DOCC_BASE = "https://developer.apple.com/tutorials/data/design/human-interface-guidelines"
@@ -154,20 +153,24 @@ def search_hig(query: str, platform: Optional[str] = None, limit: int = 25) -> D
     }, "developer.apple.com HIG")
 
 
-def fetch_hig(topic: str) -> Dict:
+def fetch_hig(topic: str, section=None, start_line=None, end_line=None, max_lines=200, format='markdown') -> Dict:
     """
-    Fetch the full content of a HIG topic by slug or title.
+    Fetch a HIG topic by slug or title.
 
     Args:
         topic: Either a slug ('buttons', 'dark-mode') or a title substring
                ('Buttons', 'Dark Mode'). Resolved against the topic index.
+        section: Exact heading title or full 'Parent > Child' path.
+        start_line, end_line: Inclusive lines (relative to `section` when
+                              given), capped by max_lines (1..1000).
+        format: 'markdown' (default) or 'json'; passed to `fetch_documentation`.
 
     Returns:
-        Same shape as `fetch_documentation` — title, abstract, declaration,
-        discussion, parameters, returns, content_sections, etc.
+        Same shape as `fetch_documentation` for the chosen format.
         Or {error, candidates} when ambiguous, {error, message} when missing.
     """
-    err = require_string(topic, 'topic')
+    # Validate up front: a title lookup may walk the whole topic index first.
+    err = require_string(topic, 'topic') or validate_documentation_request(section, start_line, end_line, max_lines, format)
     if err: return err
     needle = topic.lower().strip()
     if not needle:
@@ -179,10 +182,9 @@ def fetch_hig(topic: str) -> Dict:
     # (~1 fetch instead of the ~36-fetch index walk).
     if needle.replace('-', '').replace('_', '').isalnum() and ' ' not in needle:
         slug = needle.replace('_', '-')
-        direct = fetch_documentation(f"https://developer.apple.com/design/human-interface-guidelines/{slug}")
-        if not direct.get('error'):
-            return direct
-        if direct.get('error') not in ('not_found',):
+        direct = fetch_documentation(f"https://developer.apple.com/design/human-interface-guidelines/{slug}",
+                                     section, start_line, end_line, max_lines, format)
+        if direct.get('error') != 'not_found':
             return direct
 
     topics = _build_topic_index()
@@ -205,6 +207,6 @@ def fetch_hig(topic: str) -> Dict:
             "error": "ambiguous_topic",
             "candidates": [{"title": m['title'], "slug": m['slug'], "category": m['category']} for m in matches[:10]],
         }
-    return fetch_documentation(matches[0]['url'])
+    return fetch_documentation(matches[0]['url'], section, start_line, end_line, max_lines, format)
 
 

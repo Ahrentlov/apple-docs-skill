@@ -49,16 +49,10 @@ release = get_xcode_release_notes_url("15.4")
 if 'error' in release:
     result = release
 else:
-    notes = fetch_documentation(release['url'])
-    if 'error' in notes:
-        result = notes
-    else:
-        result = {'title': notes['title'], 'url': notes['url'],
-                  'sections': notes.get('content_outline', []),
-                  'discussion': notes['discussion'],
-                  'unrendered_types': notes.get('unrendered_types', [])}
+    result = fetch_documentation(release['url'])  # Markdown in result['content']
 ```
 
-Use each outline entry’s `path` to retain parent categories such as General or
-Devices when several headings say “Resolved Issues”. Empty parent headings are
-kept in source order; the issue text lives in their child entries.
+Keep parent headings (such as General or Devices) when several headings say
+“Resolved Issues”. With `format='json'`, each `content_outline` entry carries
+its `path`; empty parent headings are kept in source order and the issue text
+lives in their child entries.

@@ -20,7 +20,7 @@ The sandbox provides:
 Available APIs in the sandbox (see SKILL.md / references/ for full signatures):
 
 Apple Documentation
-- fetch_documentation(url, section?, start_line?, end_line?, max_lines?) - Parse any /documentation/ or /design/human-interface-guidelines/ page
+- fetch_documentation(url, section?, start_line?, end_line?, max_lines?, format?) - Markdown (default) or parsed JSON for any /documentation/ or /design/human-interface-guidelines/ page
 - search_apple_online_urls(query, ...)  - Apple docs search URLs
 - get_framework_info(framework)         - Framework documentation URL
 
@@ -38,7 +38,7 @@ WWDC Sessions
 - fetch_wwdc_session(session_id)              - Fetch the actual community-written notes
 
 Human Interface Guidelines
-- search_hig(query, platform?, limit?) / fetch_hig(topic)
+- search_hig(query, platform?, limit?) / fetch_hig(topic, section?, start_line?, end_line?, max_lines?, format?)
 
 Documentation Archive
 - search_archive(query, platform?, framework?, resource_type?, topic?, limit?)

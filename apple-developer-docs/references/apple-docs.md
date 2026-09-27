@@ -1,13 +1,34 @@
 # Apple Documentation
 
-## fetch_documentation(url: str, section=None, start_line=None, end_line=None, max_lines=200) -> Dict
+## fetch_documentation(url: str, section=None, start_line=None, end_line=None, max_lines=200, format='markdown') -> Dict
 
-Fetch structured documentation from Apple Developer.
+Fetch documentation from Apple Developer.
 
 **Parameters:**
-- `url`: A URL under either `https://developer.apple.com/documentation/` or `https://developer.apple.com/design/human-interface-guidelines/` (same DocC schema).
+- `url`: A URL under either `https://developer.apple.com/documentation/` or `https://developer.apple.com/design/human-interface-guidelines/`.
+- `format`: `'markdown'` (default) returns Apple's own Markdown rendering of
+  the page. `'json'` parses the DocC JSON into structured fields (the pre-1.9
+  behavior). Use `'json'` when you need `symbols`, `relationships`,
+  `see_also`, or per-field access to `declaration` / `parameters`.
 
-**Returns (full response, no selectors):**
+**Markdown returns (default, no selectors):**
+```python
+{
+    "title": str,
+    "url": str,              # human-facing page; cite this
+    "markdown_url": str,     # .md source actually fetched
+    "metadata": dict,        # Apple's metadata comment: title, role, framework,
+                             # documentType, availability ["iOS: 13.0.0 -", ...], symbol {kind, preciseIdentifier}
+    "content": str,          # full Markdown, wrapped in untrusted-content markers
+}
+```
+
+The Markdown keeps tables, image alt text, Topics, Relationships, and HIG
+change logs. Declarations appear as fenced code blocks after the abstract.
+Links are site-relative (`/documentation/SwiftUI/Text`); prefix
+`https://developer.apple.com` to fetch them.
+
+**JSON returns (`format='json'`, no selectors):**
 ```python
 {
     "title": str,
@@ -21,7 +42,7 @@ Fetch structured documentation from Apple Developer.
 }
 ```
 
-**Optional (present only when the page has them):**
+**Optional JSON fields (present only when the page has them):**
 ```python
 {
     "availability": list[dict],          # platform introducedAt/deprecatedAt/unavailable/beta metadata
@@ -40,22 +61,23 @@ Fetch structured documentation from Apple Developer.
 ```
 
 **Errors:**
-- `invalid_input` — URL is not a string.
+- `invalid_input` — URL is not a string, or `format` is not `'markdown'` / `'json'`.
 - `unsupported_language` — non-Swift language query; open the original page.
-- `invalid_schema` — response is not a DocC document.
+- `invalid_schema` — response is not a DocC document (JSON) or not `text/markdown` (Markdown).
 - `fetch_failed` — response-size limit or other fetch failure.
-- `invalid_url` — URL does not match an accepted prefix.
+- `invalid_url` — URL is not a page under an accepted prefix (the bare `/documentation` root is not a page; the HIG root is).
 - `not_found` — HTTP 404.
 - `http_error` — other HTTP status (`status` field included).
 - `timeout` — request exceeded 10s.
 - `network_error` — DNS / connection / SSL failure.
-- `invalid_json` — response was not valid JSON.
+- `invalid_json` — response was not valid JSON (JSON).
+- `invalid_selection`, `section_not_found`, `ambiguous_section`, `line_out_of_range`: see [Bounded documentation passages](#bounded-documentation-passages).
 
-Discussion and other rendered fields produce markdown-style text (fenced code blocks, `- item` bullets, `**Note:**` / `**Important:**` aside prefixes, `` `title` `` for cross-references).
+In the JSON format, discussion and other rendered fields produce markdown-style text (fenced code blocks, `- item` bullets, `**Note:**` / `**Important:**` aside prefixes, `` `title` `` for cross-references).
 
 **Example:**
 ```python
-doc = fetch_documentation("https://developer.apple.com/documentation/swiftui/view")
+doc = fetch_documentation("https://developer.apple.com/documentation/swiftui/view", format="json")
 if 'error' in doc:
     result = doc
 else:
@@ -66,11 +88,11 @@ else:
               "unrendered_types": doc.get('unrendered_types', [])}
 ```
 
-The default Swift representation is parsed. Query parameters and fragments are
+The default Swift representation is fetched. Query parameters and fragments are
 removed from the canonical output URL; a non-Swift `language` is rejected rather
 than silently returning Swift declarations. Non-Discussion headings remain in
 `content_sections`, including text before the first heading under `Overview`.
-`content_outline` is the authoritative ordered representation: it keeps empty and
+In the JSON format, `content_outline` is the authoritative ordered representation: it keeps empty and
 repeated headings, their ancestor paths, optional source anchors, and Discussion /
 Return Value entries. Each entry contains its own body, not its descendants.
 Heading scope resets at each content-kind section. Use paths when attributing
@@ -105,7 +127,8 @@ Get documentation URL for a framework name (e.g. `SwiftUI`, `UIKit`, `Foundation
 ## Discovery workflow
 
 When the URL is known, fetch it directly. For an unknown member, fetch the
-framework or parent type page and follow the returned `symbols` URLs. Filter
+framework or parent type page and follow its Topics links (or the `symbols`
+URLs with `format='json'`). Filter
 those symbols locally by name/abstract. `get_framework_info` only constructs a
 likely framework URL; fetching it verifies that the page exists.
 
@@ -119,23 +142,28 @@ result links with a browser tool.
 
 ## Bounded documentation passages
 
-Pass `section="Overview"` or a qualified heading such as
-`section="Overview > General > Resolved Issues"`. Matching ignores case and
+Pass `section="Overview"` or a qualified heading. Matching ignores case and
 includes descendant sections. Repeated matches return `ambiguous_section` with
-candidate paths/anchors; missing headings return `section_not_found`.
+candidate paths; missing headings return `section_not_found`.
 
-Optional `start_line` and `end_line` select 1-based inclusive lines in the
-**rendered content**, relative to the selected section when one is supplied.
-These are not source-file line numbers. `max_lines` defaults to 200 (1..1000).
-With no section or line selector, the existing full structured response is returned.
-Selected responses contain wrapped `content`, title, availability when present,
-source URLs, `citation_url` (section anchor when available), `line_basis`,
+Heading paths differ by format. In Markdown they are the full path from the
+page title, e.g. `"Xcode 16.4 Release Notes > Overview > General > Resolved Issues"`. In JSON they
+start below it, e.g. `"Overview > General > Resolved Issues"`, and candidates
+carry source anchors that become `citation_url` fragments.
+
+Optional `start_line` and `end_line` select 1-based inclusive lines,
+relative to the selected section when one is supplied. Without a section,
+Markdown lines count from after the metadata comment; JSON lines count the
+rendered outline. `max_lines` defaults to 200 (1..1000).
+With no section or line selector, the full response is returned.
+Selected responses contain wrapped `content`, title, source URLs (plus
+`metadata` for Markdown, `availability` for JSON), `citation_url`, `line_basis`,
 `total_lines`, `start_line`, `end_line`, `returned_lines`, `selection_end_line`,
 `selection_truncated`, `excerpt_partial`, and `next_start_line`.
 Retain these fields when reporting excerpts. Continue with the same section and
-`start_line=next_start_line`; raise `max_lines` only as needed. Other structured
-fields such as declarations and parameters are available in the full response;
-the selected content is the rendered primary-content outline.
+`start_line=next_start_line`; raise `max_lines` only as needed. Structured
+fields such as declarations and parameters are available in the full JSON
+response.
 
 ```python
 result = fetch_documentation(

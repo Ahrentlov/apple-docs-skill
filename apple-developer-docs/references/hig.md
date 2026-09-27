@@ -1,7 +1,7 @@
 # Human Interface Guidelines
 
-Search and fetch Apple's HIG. Same DocC JSON schema as `/documentation/`, so
-`fetch_hig` returns the same shape as `fetch_documentation`.
+Search and fetch Apple's HIG. Search walks the DocC JSON topic tree; `fetch_hig`
+resolves a topic and returns `fetch_documentation` output for its page.
 
 ## search_hig(query: str, platform: str | None = None, limit: int = 25) -> Dict
 
@@ -33,24 +33,32 @@ annotates the request; it does not filter HIG content. Results include
 
 ---
 
-## fetch_hig(topic: str) -> Dict
+## fetch_hig(topic: str, section=None, start_line=None, end_line=None, max_lines=200, format='markdown') -> Dict
 
-Fetch the full content of a HIG topic by slug or title.
+Fetch a HIG topic by slug or title. Markdown by default; `format='json'` returns the structured DocC fields.
 
 **Parameters:**
 - `topic`: `'buttons'` (slug) or `'Dark Mode'` (title substring).
+- `section`: exact heading title (`'Help buttons'`) or the full heading path
+  from the page title (`'Buttons > Platform considerations > macOS'`). An
+  ambiguous or missing title returns `candidates` with each heading's `path`.
+- `start_line`, `end_line`: inclusive lines, relative to `section` when one is
+  given, capped by `max_lines` (1..1000).
+  Selectors only apply when given; without them the whole page is returned.
+- `format`: `'markdown'` (default) or `'json'`.
 
 **Fast path:** when the input looks like a slug (alphanumeric + dashes), the
-function tries the URL directly (~1 fetch). Falls back to the full topic-index
+function tries the page directly (~1 fetch). Falls back to the full topic-index
 walk on title-substring lookups.
 
-**Returns:** Same shape as `fetch_documentation` — `title, abstract, declaration, discussion, content_sections, ...`. HIG pages don't have programmatic symbols, so optional fields like `relationships`, `see_also`, `mentions`, and `symbols` are typically absent.
+**Returns:** Same shape as [`fetch_documentation`](apple-docs.md) for the chosen
+format. Markdown keeps tables, image alt text, and the page's change log.
 
-**Errors:** `empty_topic`, `topic_not_found`, `ambiguous_topic` (with `candidates` list), plus `fetch_documentation`'s error variants.
+**Errors:** `empty_topic`, `invalid_topic`, `invalid_selection`, `topic_not_found`, `ambiguous_topic` (with `candidates` list), `section_not_found` / `ambiguous_section` (with `candidates`), `line_out_of_range`, plus `fetch_documentation`'s error variants.
 
 **Example:**
 ```python
-result = fetch_hig("buttons")
+result = fetch_hig("buttons", section="Help buttons")
 # or by title substring
 result = fetch_hig("Dark Mode")
 ```

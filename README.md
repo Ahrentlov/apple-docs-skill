@@ -5,17 +5,20 @@ agent writes a short Python query that fetches and filters documentation before
 returning relevant evidence to its context. No MCP server or third-party Python
 packages are required.
 
-New lookup features include bounded section/line reads with citations,
+Apple documentation and HIG pages come back as Apple's own Markdown, so tables,
+topics, and change logs survive; parsed DocC fields are available on request.
+Other features include bounded section/line reads with citations,
 framework-scoped symbol discovery, compiler searches pinned to a branch/tag/commit,
 and bounded comparisons of a file between two revisions. See the
 [API guide](apple-developer-docs/SKILL.md) for signatures and coverage limits.
 
 ## Sources
 
-- **Apple documentation:** DocC declarations, availability, deprecation,
-  discussion, parameters, return values, related symbols, and section content.
-- **Human Interface Guidelines:** topic discovery and structured page content.
-- **Xcode release notes:** version discovery and DocC page fetching.
+- **Apple documentation:** Apple's Markdown rendering of each page (tables,
+  topics, relationships, availability metadata) with section/line selection, or
+  parsed DocC fields (declarations, parameters, related symbols) on request.
+- **Human Interface Guidelines:** topic discovery and Markdown page content with section selection.
+- **Xcode release notes:** version discovery and page fetching.
 - **Documentation Archive:** title/facet search over legacy guides, Tech Notes,
   Q&As, and sample-code links. Read linked HTML with a browser tool.
 - **Swift Evolution:** proposal metadata search with version/status filters and
@@ -108,9 +111,10 @@ and [sandbox.md](apple-developer-docs/references/sandbox.md) for the actual cont
 ## Limitations
 
 - Apple URL helpers and repository search helpers generate links only.
-- DocC rendering covers common text, code, lists, tables, and cross-references.
-  `unrendered_types` identifies unsupported content; consult the original page
-  when it matters. Non-Swift language variants require the original page.
+- Pages default to Apple's Markdown. The optional DocC JSON rendering covers
+  common text, code, lists, tables, and cross-references; its `unrendered_types`
+  identifies unsupported content. Non-Swift language variants require the
+  original page.
 - HIG discovery walks a bounded topic index; `platform` is an annotation, not a
   filter. Partial fetches are disclosed and are not cached as complete indexes.
 - Compiler text search has a file budget and per-file size cap. Failures and
