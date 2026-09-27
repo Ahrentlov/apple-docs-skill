@@ -93,3 +93,30 @@ def select_text(text, start_line=None, end_line=None, section=None, max_lines=20
     if selected:
         result['section'] = selected
     return result
+
+
+def validate_section_selection(section, start_line, end_line, max_lines):
+    """Like validate_selection, but a section may be combined with section-relative line bounds."""
+    err = validate_selection(start_line, end_line, None, max_lines)
+    if not err and section is not None:
+        err = validate_selection(None, None, section, max_lines)
+    return err
+
+
+def select_section_lines(text, section=None, start_line=None, end_line=None, max_lines=200):
+    """Select a Markdown section (with descendants), then lines within it.
+
+    Line bounds count from the section's heading when a section is given, else
+    from the start of `text`. A section selection is always a partial excerpt.
+    """
+    heading = None
+    if section is not None:
+        found = select_text(text, section=section, max_lines=1)
+        if 'error' in found:
+            return found
+        heading = found['section']
+        text = '\n'.join(text.splitlines()[heading['start_line'] - 1:heading['end_line']])
+    selection = select_text(text, start_line, end_line, None, max_lines)
+    if heading and 'error' not in selection:
+        selection.update({'section': heading, 'excerpt_partial': True})
+    return selection

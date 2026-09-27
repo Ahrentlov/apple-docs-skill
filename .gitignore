@@ -5,3 +5,9 @@ __pycache__/
 .env
 
 apple-developer-docs-workspace/
+
+# Local skill installs, build archives, and personal Claude Code state
+.agents/
+*.zip
+.claude/settings.local.json
+.claude/worktrees/

@@ -7,14 +7,11 @@ Standalone implementation for fetching Apple Developer documentation.
 
 import re
 import json
-import socket
-import urllib.request
 import urllib.parse
-import urllib.error
 from typing import Dict, Optional
 
-from ._excerpts import select_text, validate_selection
-from ._utils import validate_fetch_url, open_url, read_bounded, UA_APPLE_BROWSER, mark_untrusted, require_string
+from ._excerpts import select_section_lines, select_text, validate_section_selection
+from ._utils import validate_fetch_url, fetch_page, mark_untrusted, require_string
 
 
 class AppleDocsAPI:
@@ -309,9 +306,10 @@ _api = AppleDocsAPI()
 
 DOC_FORMATS = ('markdown', 'json')
 
-# (page prefix, Markdown base, JSON base, whether the bare prefix is itself a page).
-# Apple serves /documentation pages as <page>.md but HIG Markdown only under tutorials/data;
-# the HIG root is a page, while /documentation has no Markdown rendering.
+# (page prefix, Markdown base, JSON base or None, whether the bare prefix is itself a page).
+# Apple serves /documentation pages as <page>.md but HIG and tutorial Markdown only under
+# tutorials/data. The HIG root is a page; /documentation and /tutorials have no Markdown root.
+# Tutorial JSON uses a different schema than DocC reference pages, so tutorials are Markdown-only.
 _DOC_SOURCES = (
     ("https://developer.apple.com/documentation/",
      "https://developer.apple.com/documentation",
@@ -319,6 +317,9 @@ _DOC_SOURCES = (
     ("https://developer.apple.com/design/human-interface-guidelines/",
      "https://developer.apple.com/tutorials/data/design/human-interface-guidelines",
      "https://developer.apple.com/tutorials/data/design/human-interface-guidelines", True),
+    ("https://developer.apple.com/tutorials/",
+     "https://developer.apple.com/tutorials/data/tutorials",
+     None, False),
 )
 
 
@@ -326,11 +327,7 @@ def validate_documentation_request(section, start_line, end_line, max_lines, for
     """Validate fetch_documentation's selector and format arguments before any network work."""
     if format not in DOC_FORMATS:
         return {"error": "invalid_input", "message": "format must be 'markdown' or 'json'"}
-    # Unlike fetch_github_file, a section may be combined with line bounds (lines are section-relative).
-    err = validate_selection(start_line, end_line, None, max_lines)
-    if not err and section is not None:
-        err = validate_selection(None, None, section, max_lines)
-    return err
+    return validate_section_selection(section, start_line, end_line, max_lines)
 
 
 def _resolve_page(url: str):
@@ -350,43 +347,21 @@ def _resolve_page(url: str):
             path = clean_url[len(prefix):]
             if path or root_is_page:
                 suffix = f"/{path}" if path else ""
-                return (clean_url, f"{md_base}{suffix}.md", f"{json_base}{suffix}.json"), None
+                return (clean_url, f"{md_base}{suffix}.md", f"{json_base}{suffix}.json" if json_base else None), None
     return None, {
         "error": "invalid_url",
-        "message": "URL must be a page under developer.apple.com/documentation/ or /design/human-interface-guidelines",
+        "message": "URL must be a page under developer.apple.com/documentation/, /design/human-interface-guidelines, or /tutorials/",
         "url": url,
     }
 
 
-def _fetch_page(fetch_url: str, url: str, accept: str):
-    """Return ((body bytes, content type), None) or (None, error dict) with the documented error codes."""
-    try:
-        req = urllib.request.Request(fetch_url, headers={'User-Agent': UA_APPLE_BROWSER, 'Accept': accept})
-        with open_url(req, timeout=10) as response:
-            return (read_bounded(response), response.headers.get_content_type()), None
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return None, {"error": "not_found", "message": f"No documentation at {url}", "url": url}
-        return None, {"error": "http_error", "status": e.code, "message": f"HTTP {e.code}: {e.reason}", "url": url}
-    except urllib.error.URLError as e:
-        reason = e.reason
-        if isinstance(reason, (socket.timeout, TimeoutError)):
-            return None, {"error": "timeout", "message": "Request exceeded 10s", "url": url}
-        return None, {"error": "network_error", "reason": type(reason).__name__, "message": str(reason), "url": url}
-    except (TimeoutError, socket.timeout):
-        return None, {"error": "timeout", "message": "Request exceeded 10s", "url": url}
-    except (ValueError, OSError) as exc:
-        return None, {"error": "fetch_failed", "message": str(exc), "url": url}
-
-
 def _markdown_documentation(md_url: str, clean_url: str, section, start_line, end_line, max_lines) -> Dict:
     """Fetch Apple's Markdown rendering, split off its metadata comment, and optionally select an excerpt."""
-    fetched, err = _fetch_page(md_url, clean_url, 'text/markdown')
+    page, err = fetch_page(md_url, clean_url, 'text/markdown')
     if err: return err
-    body, content_type = fetched
-    if content_type != 'text/markdown':
-        return {"error": "invalid_schema", "message": f"Expected text/markdown, got {content_type}", "url": clean_url}
-    text = body.decode('utf-8', errors='replace')
+    if page.content_type != 'text/markdown':
+        return {"error": "invalid_schema", "message": f"Expected text/markdown, got {page.content_type}", "url": clean_url}
+    text = page.body.decode('utf-8', errors='replace')
     metadata = {}
     match = re.match(r'\s*<!--(.*?)-->\s*', text, re.S)
     if match:
@@ -402,31 +377,21 @@ def _markdown_documentation(md_url: str, clean_url: str, section, start_line, en
     if section is None and start_line is None and end_line is None:
         result['content'] = text
         return mark_untrusted(result, "developer.apple.com", wrap_field='content')
-    heading = None
-    if section is not None:
-        # Resolve the section first so line bounds are relative to it, as in the JSON format.
-        found = select_text(text, section=section, max_lines=1)
-        if 'error' in found:
-            return dict(found, url=clean_url)
-        heading = found['section']
-        text = '\n'.join(text.splitlines()[heading['start_line'] - 1:heading['end_line']])
-    selection = select_text(text, start_line, end_line, None, max_lines)
+    selection = select_section_lines(text, section, start_line, end_line, max_lines)
     if 'error' in selection:
         return dict(selection, url=clean_url)
     result.update(selection)
-    if heading:
-        result.update({'section': heading, 'excerpt_partial': True})
     result.update({'citation_url': clean_url,
-                   'line_basis': 'Markdown lines within the selected section' if heading else 'Markdown lines after the metadata comment'})
+                   'line_basis': 'Markdown lines within the selected section' if section is not None else 'Markdown lines after the metadata comment'})
     return mark_untrusted(result, "developer.apple.com", wrap_field='content')
 
 
 def _json_documentation(json_url: str, clean_url: str, section, start_line, end_line, max_lines) -> Dict:
     """Fetch and parse the DocC JSON, optionally selecting from its rendered outline."""
-    fetched, err = _fetch_page(json_url, clean_url, 'application/json')
+    page, err = fetch_page(json_url, clean_url, 'application/json')
     if err: return err
     try:
-        data = json.loads(fetched[0])
+        data = json.loads(page.body)
     except ValueError as e:  # JSONDecodeError, or UnicodeDecodeError for non-UTF-8 bytes
         return {"error": "invalid_json", "message": str(e), "url": clean_url}
 
@@ -467,8 +432,9 @@ def _json_documentation(json_url: str, clean_url: str, section, start_line, end_
 def fetch_documentation(url: str, section=None, start_line=None, end_line=None, max_lines=200, format='markdown') -> Dict:
     """Fetch documentation from the Apple Developer website.
 
-    Accepts pages under `developer.apple.com/documentation/` and
-    `developer.apple.com/design/human-interface-guidelines` (including its root).
+    Accepts pages under `developer.apple.com/documentation/`,
+    `developer.apple.com/design/human-interface-guidelines` (including its root),
+    and `developer.apple.com/tutorials/` (step-by-step tutorials; Markdown only).
 
     format='markdown' (default) returns Apple's Markdown rendering of the page
     in `content`, with the page's metadata comment parsed into `metadata`.
@@ -484,6 +450,7 @@ def fetch_documentation(url: str, section=None, start_line=None, end_line=None, 
       * ``invalid_selection``: bad section / line / max_lines arguments
       * ``invalid_url``: URL isn't a page under an accepted developer.apple.com prefix
       * ``unsupported_language``: a non-Swift ``language`` query
+      * ``unsupported_format``: format='json' for a tutorial page
       * ``not_found``: page doesn't exist (HTTP 404)
       * ``http_error``: other HTTP status (includes ``status`` field)
       * ``timeout``: request exceeded 10s
@@ -500,7 +467,73 @@ def fetch_documentation(url: str, section=None, start_line=None, end_line=None, 
     clean_url, md_url, json_url = urls
     if format == 'markdown':
         return _markdown_documentation(md_url, clean_url, section, start_line, end_line, max_lines)
+    if json_url is None:
+        return {"error": "unsupported_format", "message": "Tutorial pages are available as Markdown only", "url": clean_url}
     return _json_documentation(json_url, clean_url, section, start_line, end_line, max_lines)
+
+
+def _version_tuple(version: str) -> tuple:
+    parts = [int(p) for p in version.split('.')]
+    return tuple(parts + [0] * (3 - len(parts)))
+
+
+def _platform_key(name: str) -> str:
+    return name.casefold().replace(' ', '')
+
+
+def check_availability(url: str, platform: Optional[str] = None, version: Optional[str] = None) -> Dict:
+    """Report a page's platform availability from Apple's DocC metadata.
+
+    Without `platform`, returns every listed platform. With `platform`
+    (e.g. 'iOS', 'macOS', 'Mac Catalyst', 'visionOS'), adds a `status` for it:
+    'available', 'deprecated' (still usable, deprecated at or before the
+    version), 'unavailable', 'not_yet_available' (version precedes
+    introduction), 'not_listed' (Apple lists no availability for that platform),
+    or 'introduction_unknown' (listed without an introduced version).
+    `version` ('17', '17.4', '17.4.1') requires `platform`; without it the
+    status describes the latest release Apple documents.
+    """
+    err = require_string(url, 'url')
+    if err: return err
+    if platform is not None and (not isinstance(platform, str) or not platform.strip()):
+        return {"error": "invalid_input", "message": "platform must be a nonempty string"}
+    if version is not None:
+        if platform is None:
+            return {"error": "invalid_input", "message": "version requires platform"}
+        if not isinstance(version, str) or not re.fullmatch(r'[0-9]+(\.[0-9]+){0,2}', version.strip()):
+            return {"error": "invalid_input", "message": "version must look like '17', '17.4', or '17.4.1'"}
+        version = version.strip()
+
+    doc = fetch_documentation(url, format='json')
+    if 'error' in doc:
+        return doc
+    platforms = [{
+        "name": p.get('name', ''),
+        "introduced": p.get('introducedAt'),
+        "deprecated": p.get('deprecatedAt'),
+        "deprecation_message": p.get('message'),
+        "beta": bool(p.get('beta')),
+        "unavailable": bool(p.get('unavailable')),
+    } for p in doc.get('availability', []) if isinstance(p, dict)]
+    result = {"title": doc.get('title', ''), "url": doc['url'], "platforms": platforms}
+    if platform is None:
+        return mark_untrusted(result, "developer.apple.com")
+
+    listed = next((p for p in platforms if _platform_key(p['name']) == _platform_key(platform)), None)
+    if listed is None:
+        status = 'not_listed'
+    elif listed['unavailable']:
+        status = 'unavailable'
+    elif version is not None and listed['introduced'] is None:
+        status = 'introduction_unknown'
+    elif version is not None and _version_tuple(version) < _version_tuple(listed['introduced']):
+        status = 'not_yet_available'
+    elif listed['deprecated'] and (version is None or _version_tuple(version) >= _version_tuple(listed['deprecated'])):
+        status = 'deprecated'
+    else:
+        status = 'available'
+    result.update({"platform": platform, "version": version, "status": status, "platform_availability": listed})
+    return mark_untrusted(result, "developer.apple.com")
 
 
 def search_apple_online_urls(query: str, platform: Optional[str] = None) -> Dict:
@@ -530,57 +563,3 @@ def get_framework_info(framework: str) -> Dict:
         "url": f"https://developer.apple.com/documentation/{framework_path}",
         "note": "Direct link to framework documentation"
     }
-
-
-def search_symbols(framework: str, query: str, limit=20, max_pages=20) -> Dict:
-    """Find symbol-name substrings through a bounded framework topic traversal."""
-    if not isinstance(framework, str) or not re.fullmatch(r'[A-Za-z0-9_-]+', framework):
-        return {'error': 'invalid_input', 'message': 'framework must be a framework slug, such as swiftui'}
-    if not isinstance(query, str) or not query.strip():
-        return {'error': 'invalid_input', 'message': 'query must be a nonempty symbol-name substring'}
-    if type(limit) is not int or not 1 <= limit <= 200 or type(max_pages) is not int or not 1 <= max_pages <= 100:
-        return {'error': 'invalid_input', 'message': 'limit must be 1..200 and max_pages 1..100'}
-    framework = framework.lower()
-    root = f'https://developer.apple.com/documentation/{framework}'
-    queue, discovered, matches, searched, failures = [root], {root}, {}, [], []
-    attempted, frontier_clipped = 0, False
-    needle = query.strip().casefold()
-    terms = re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?=[A-Z][a-z]|$)|[0-9]+', query)
-    terms = [term.casefold() for term in terms if len(term) > 2] or [needle]
-    while queue and attempted < max_pages and len(matches) < limit:
-        url = queue.pop(0)
-        attempted += 1
-        page = fetch_documentation(url, format='json')
-        if 'error' in page:
-            failures.append({'url': url, 'error': page['error']})
-            continue
-        searched.append(url)
-        for symbol in page.get('symbols', []):
-            child = symbol.get('url', '')
-            try:
-                validate_fetch_url(child)
-                parts = urllib.parse.urlsplit(child)
-            except (ValueError, TypeError):
-                continue
-            if parts.hostname != 'developer.apple.com' or not parts.path.lower().startswith(f'/documentation/{framework}/'):
-                continue
-            child = urllib.parse.urlunsplit(('https', 'developer.apple.com', parts.path.rstrip('/'), '', ''))
-            if symbol.get('kind') == 'symbol' and needle in symbol.get('name', '').casefold():
-                if child not in matches:
-                    matches[child] = dict(symbol, url=child, found_on=url)
-            if child not in discovered:
-                if len(discovered) >= 5000:
-                    frontier_clipped = True
-                    continue
-                discovered.add(child)
-                queue.append(child)
-        queue.sort(key=lambda u: (needle not in urllib.parse.unquote(u).casefold(),
-                                 -sum(term in urllib.parse.unquote(u).casefold() for term in terms)))
-    results = list(matches.values())
-    return mark_untrusted({'framework': framework, 'query': query, 'results': results[:limit], 'returned': min(limit, len(results)),
-        'matches_seen': len(results), 'pages_attempted': attempted, 'pages_searched': len(searched), 'searched_urls': searched,
-        'failed_pages': failures, 'pending_pages': len(queue), 'frontier_truncated': frontier_clipped,
-        'max_pages': max_pages, 'result_limit_reached': len(results) >= limit,
-        'truncated': bool(queue or failures or frontier_clipped or len(results) > limit),
-        'search_scope': 'symbol names in reachable framework topic references; not an exhaustive symbol index'},
-        'developer.apple.com')

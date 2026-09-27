@@ -5,7 +5,7 @@
 Fetch documentation from Apple Developer.
 
 **Parameters:**
-- `url`: A URL under either `https://developer.apple.com/documentation/` or `https://developer.apple.com/design/human-interface-guidelines/`.
+- `url`: A page under `https://developer.apple.com/documentation/`, `https://developer.apple.com/design/human-interface-guidelines`, or `https://developer.apple.com/tutorials/` (step-by-step tutorials, Markdown only; see [Tutorials](#tutorials)).
 - `format`: `'markdown'` (default) returns Apple's own Markdown rendering of
   the page. `'json'` parses the DocC JSON into structured fields (the pre-1.9
   behavior). Use `'json'` when you need `symbols`, `relationships`,
@@ -63,6 +63,7 @@ Links are site-relative (`/documentation/SwiftUI/Text`); prefix
 **Errors:**
 - `invalid_input` — URL is not a string, or `format` is not `'markdown'` / `'json'`.
 - `unsupported_language` — non-Swift language query; open the original page.
+- `unsupported_format`: `format='json'` for a tutorial page.
 - `invalid_schema` — response is not a DocC document (JSON) or not `text/markdown` (Markdown).
 - `fetch_failed` — response-size limit or other fetch failure.
 - `invalid_url` — URL is not a page under an accepted prefix (the bare `/documentation` root is not a page; the HIG root is).
@@ -171,25 +172,91 @@ result = fetch_documentation(
     section="Overview", max_lines=40)
 ```
 
-## search_symbols(framework, query, limit=20, max_pages=20)
+## search_symbols(framework, query='', kind=None, deprecated=None, beta=None, limit=20, offset=0)
 
-Returns actual case-insensitive symbol-name substring matches, scoped to a
-framework slug such as `swiftui` or `uikit`. Traverses that framework's topic
-references, prioritizing URLs related to query words. Articles help traversal
-but are not returned as symbols. Cross-framework links are excluded and cycles
-are deduplicated. Results include symbol name, declaration/abstract when present,
-role, group, URL, and `found_on`. Fetch the symbol URL for authoritative details
-and availability before explaining API behavior.
+Searches a framework's navigator index: the tree behind the sidebar on
+developer.apple.com, fetched once (`/tutorials/data/index/<framework>`) and
+cached for the process. It lists every page Apple publishes for the framework,
+so an empty result means the framework lists no such page. Pages the tree links
+from other frameworks are excluded.
 
-`limit` is 1..200 and `max_pages` is 1..100. The discovered-page frontier is
-capped at 5,000. Results include `returned`, `matches_seen`, `pages_attempted`,
-`pages_searched`, `searched_urls`, `failed_pages`, `pending_pages`,
-`frontier_truncated`, `result_limit_reached`, and `truncated`. Failed pages or
-unvisited links make coverage partial. This explores reachable topic references,
-not a complete framework symbol index; even a completed traversal cannot prove
-absence from the entire SDK. Network-heavy searches may need a runner timeout
-of 60..300 seconds. Invalid inputs return `invalid_input`.
+**Parameters:**
+- `framework`: slug such as `swiftui`, `uikit`, `foundation`, `appkit`.
+- `query`: space-separated terms; each must occur in the title or the URL's
+  last path component. Member titles are declarations (`func opacity(Double) -> some View`).
+  Empty matches everything, for filter-only listings.
+- `kind`: `struct`, `class`, `protocol`, `enum`, `method`, `property`, `init`,
+  `case`, `macro`, `article`, `sampleCode`, ... (case-insensitive).
+- `deprecated`, `beta`: `True`/`False` keep only pages with that flag.
+- `limit` 1..200 per call; follow `next_offset` for the rest.
+
+**Returns:**
+```python
+{
+    "framework": str, "query": str, "kind": str | None, "deprecated": bool | None, "beta": bool | None,
+    "total_matches": int, "returned": int, "offset": int, "next_offset": int | None,
+    "indexed_pages": int, "index_url": str, "search_scope": str,
+    "results": [{"title": str, "kind": str, "url": str, "deprecated": bool, "beta": bool,
+                 "locations": [str]}],   # every sidebar path the page appears under
+}
+```
+
+Exact title or name matches rank first, then prefixes, then other matches in
+Apple's order. Fetch a result's `url` for declarations and availability before
+explaining behavior. **Errors:** `invalid_input`, `not_found` (Apple publishes
+no index for that slug), `invalid_json`, `invalid_schema`, and fetch errors.
 
 ```python
-result = search_symbols("swiftui", "NavigationStack", max_pages=20)
+result = search_symbols("swiftui", "NavigationStack")
+deprecated = search_symbols("swiftui", kind="struct", deprecated=True, limit=50)
+```
+
+## check_availability(url, platform=None, version=None)
+
+Reads platform availability from the page's DocC metadata (`format='json'`
+under the hood; the Markdown metadata drops deprecation messages and flags).
+
+**Returns:** `{title, url, platforms: [{name, introduced, deprecated,
+deprecation_message, beta, unavailable}]}`. Versions are Apple's strings
+(`"13.0"`); `introduced` is `None` when Apple lists the platform without one.
+
+With `platform` (`'iOS'`, `'macOS'`, `'Mac Catalyst'`, `'visionOS'`, ...;
+case and spaces ignored) the result adds `platform`, `version`,
+`platform_availability`, and `status`:
+
+| status | meaning |
+|---|---|
+| `available` | listed, not deprecated (at `version`, or in the latest documented release) |
+| `deprecated` | still usable, deprecated at or before `version` (or at all, without `version`) |
+| `not_yet_available` | `version` precedes the introduced version |
+| `unavailable` | Apple marks it unavailable on that platform |
+| `not_listed` | Apple lists no availability for that platform |
+| `introduction_unknown` | listed without an introduced version, so `version` cannot be compared |
+
+`version` (`'17'`, `'17.4'`, `'17.4.1'`) requires `platform`.
+**Errors:** `invalid_input` plus `fetch_documentation`'s errors.
+
+```python
+result = check_availability("https://developer.apple.com/documentation/swiftui/view/glasseffect(_:in:)",
+                            platform="iOS", version="17.4")   # status: not_yet_available
+```
+
+## Tutorials
+
+`list_tutorials(course)` lists a course's tutorials in order from its overview:
+`develop-in-swift`, `swiftui`, `app-dev-training`, `swiftui-concepts`,
+`sample-apps`. Each entry has `volume`, `chapter`, `title`, `kind`, `url`,
+`abstract`, and `markdown`.
+
+Step-by-step tutorials (`kind: 'project'`, `markdown: True`) are read with
+`fetch_documentation(url, ...)`; their sections are headed
+`Section N: <title>` with `### Step N` children, so select a section by its full title. Articles and course overviews have
+no Markdown rendering; open them in a browser. Tutorials do not support
+`format='json'` (`unsupported_format`). **Errors:** `invalid_input`,
+`not_found`, `invalid_json`, `invalid_schema`, and fetch errors.
+
+```python
+course = list_tutorials("develop-in-swift")
+first = next(t for t in course['tutorials'] if t['markdown'])
+result = fetch_documentation(first['url'], start_line=1, max_lines=60)
 ```

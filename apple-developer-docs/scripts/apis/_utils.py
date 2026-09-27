@@ -3,10 +3,11 @@ Shared helpers for the API modules.
 """
 
 import json
+import socket
 import urllib.request
 import urllib.parse
 import urllib.error
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
 
 # Apple's developer.apple.com serves different content to non-browser UAs; spoof.
@@ -158,3 +159,38 @@ def read_bounded(response, limit=MAX_RESPONSE_BYTES):
     if len(body) > limit:
         raise ValueError(f"Response exceeds {limit}-byte limit")
     return body
+
+
+class FetchedPage(NamedTuple):
+    body: bytes
+    content_type: str
+    final_url: str  # after redirects
+
+
+def fetch_page(fetch_url: str, url: str, accept: str, *, ua: str = UA_APPLE_BROWSER,
+               timeout: int = 10) -> Tuple[Optional[FetchedPage], Optional[Dict]]:
+    """Fetch one resource, returning (page, None) or (None, typed error dict).
+
+    `url` is the caller-facing page identity reported in errors; `fetch_url` is
+    the resource actually requested (for example its .md or .json rendering).
+    Error codes: not_found, http_error (with status), timeout, network_error
+    (with reason), fetch_failed.
+    """
+    try:
+        req = urllib.request.Request(fetch_url, headers={'User-Agent': ua, 'Accept': accept})
+        with open_url(req, timeout=timeout) as response:
+            return FetchedPage(read_bounded(response), response.headers.get_content_type(), response.geturl()), None
+    except urllib.error.HTTPError as e:
+        e.close()  # the error carries the open response
+        if e.code == 404:
+            return None, {"error": "not_found", "message": f"No page at {url}", "url": url}
+        return None, {"error": "http_error", "status": e.code, "message": f"HTTP {e.code}: {e.reason}", "url": url}
+    except urllib.error.URLError as e:
+        reason = e.reason
+        if isinstance(reason, (socket.timeout, TimeoutError)):
+            return None, {"error": "timeout", "message": f"Request exceeded {timeout}s", "url": url}
+        return None, {"error": "network_error", "reason": type(reason).__name__, "message": str(reason), "url": url}
+    except (TimeoutError, socket.timeout):
+        return None, {"error": "timeout", "message": f"Request exceeded {timeout}s", "url": url}
+    except (ValueError, OSError) as exc:
+        return None, {"error": "fetch_failed", "message": str(exc), "url": url}

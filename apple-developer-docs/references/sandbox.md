@@ -23,8 +23,9 @@ keyword arguments documented in the source references.
 
 - Wall time: 10 seconds by default; `--timeout` accepts integers from 1 to 300.
   Includes API calls. Use 60 seconds for cold indexes and multi-source queries.
-- Query CPU time: the configured timeout; memory: attempts a 50 MiB address-space
-  limit, which may not work on macOS and does not cover the API worker.
+- Query CPU time: the configured timeout (reported as `TimeoutError`); memory: a
+  50 MiB address-space limit on Linux (`MemoryError`). macOS refuses to lower
+  memory limits, so query memory is unbounded there. Neither covers the API worker.
 - Code: 10,000 characters; prints: 64 KiB; serialized output: 1 MiB; IPC: 8 MiB
   per message. Filter large results before returning them.
 - Requires Python 3.10+ on macOS/Linux. No external Python packages are needed.

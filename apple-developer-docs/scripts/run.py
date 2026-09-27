@@ -20,7 +20,10 @@ The sandbox provides:
 Available APIs in the sandbox (see SKILL.md / references/ for full signatures):
 
 Apple Documentation
-- fetch_documentation(url, section?, start_line?, end_line?, max_lines?, format?) - Markdown (default) or parsed JSON for any /documentation/ or /design/human-interface-guidelines/ page
+- fetch_documentation(url, section?, start_line?, end_line?, max_lines?, format?) - Markdown (default) or parsed JSON for /documentation/, HIG, and /tutorials/ pages
+- search_symbols(framework, query?, kind?, deprecated?, beta?, limit?, offset?) - Search a framework's complete navigator index
+- check_availability(url, platform?, version?) - Platform availability and deprecation status
+- list_tutorials(course)                - Tutorials in a course such as develop-in-swift
 - search_apple_online_urls(query, ...)  - Apple docs search URLs
 - get_framework_info(framework)         - Framework documentation URL
 
@@ -31,11 +34,11 @@ Swift Evolution & Forums
 Swift Repositories
 - search_swift_repos_urls(query) / fetch_github_file(url, start_line?, end_line?, section?, ref?, max_lines?)
 - compare_github_file(url, base_ref, head_ref, context_lines?, max_diff_lines?)
-- search_symbols(framework, query, limit?, max_pages?)
 
 WWDC Sessions
 - search_wwdc_sessions(query, year?, limit?)  - Search ~3000 sessions
-- fetch_wwdc_session(session_id)              - Fetch the actual community-written notes
+- fetch_wwdc_transcript(session_id, section?, start_line?, end_line?, max_lines?) - Apple's transcript, chapters, and code
+- fetch_wwdc_session(session_id)              - Fetch the community-written notes
 
 Human Interface Guidelines
 - search_hig(query, platform?, limit?) / fetch_hig(topic, section?, start_line?, end_line?, max_lines?, format?)

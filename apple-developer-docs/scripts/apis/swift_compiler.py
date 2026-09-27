@@ -15,8 +15,9 @@ from typing import Dict, List, Optional
 from ._github import resolve_revision
 from ._utils import open_url, UA_APP, all_terms_match, clamp_limit, fetch_json, mark_untrusted, require_string
 
-# Upper bound for full-text candidate files; set above the corpus size so the
-# `truncated` hint to raise max_files stays actionable rather than a false ceiling.
+# Upper bound for full-text candidate files, set above the docs corpus size (~170
+# files) and used as the default: raw file reads cost no GitHub API quota and a
+# full pass takes a few seconds, so default searches cover every file.
 MAX_TEXT_FILES = 500
 
 
@@ -166,7 +167,7 @@ def search_compiler_docs(query: str, limit: int = 25, ref: str = "main") -> Dict
     }, "github.com/swiftlang/swift docs")
 
 
-def search_compiler_docs_text(query: str, limit: int = 10, max_files: int = 60, ref: str = "main") -> Dict:
+def search_compiler_docs_text(query: str, limit: int = 10, max_files: int = MAX_TEXT_FILES, ref: str = "main") -> Dict:
     """
     Full-text search inside the Swift compiler's `/docs` files.
 
@@ -178,7 +179,7 @@ def search_compiler_docs_text(query: str, limit: int = 10, max_files: int = 60, 
     Args:
         query: Space-separated keywords. All terms must appear in the same line.
         limit: Max line-level matches to return (default 10).
-        max_files: Max files to grep into (default 60, capped at 500).
+        max_files: Max files to grep into (default and cap 500, i.e. every docs file).
         ref: Branch, tag, or commit; resolved once before tree and content reads.
 
     Returns:

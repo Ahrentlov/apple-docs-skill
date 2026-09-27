@@ -258,6 +258,8 @@ def search_swift_forums(query: str, category: Optional[str] = None, limit: int =
     """
     err = require_string(query, 'query')
     if err: return err
+    if not query.strip():
+        return {'error': 'invalid_input', 'message': 'query must contain search terms'}
     limit = clamp_limit(limit)
     search_query = urllib.parse.quote(query)
     if category:
@@ -277,19 +279,25 @@ def search_swift_forums(query: str, category: Optional[str] = None, limit: int =
             data = json.loads(read_bounded(response).decode('utf-8'))
     except Exception as e:
         return {'error': 'fetch_failed', 'message': str(e), 'query': query}
+    if not isinstance(data, dict):
+        return {'error': 'invalid_schema', 'message': 'Expected a Discourse search result', 'query': query}
+    if data.get('errors'):  # e.g. a query Discourse considers too short
+        return {'error': 'upstream_rejected', 'message': '; '.join(map(str, data['errors'])), 'query': query}
 
-    topics_raw = data.get('topics', [])
-    posts_raw = data.get('posts', [])
+    # Discourse sends null (not []) for absent sections; normalize once here.
+    topics_raw = [t for t in data.get('topics') or [] if isinstance(t, dict)]
+    posts_raw = [p for p in data.get('posts') or [] if isinstance(p, dict)]
+    grouped = data.get('grouped_search_result') or {}
 
-    topic_map = {t['id']: t for t in topics_raw}
+    topic_map = {t['id']: t for t in topics_raw if 'id' in t}
 
     topics = [{
         'title': t.get('title', ''),
         'url': f"https://forums.swift.org/t/{t.get('slug', '')}/{t.get('id', '')}",
         'posts_count': t.get('posts_count', 0),
         'reply_count': t.get('reply_count', 0),
-        'created_at': t.get('created_at', '')[:10],
-        'last_posted_at': t.get('last_posted_at', '')[:10],
+        'created_at': (t.get('created_at') or '')[:10],
+        'last_posted_at': (t.get('last_posted_at') or '')[:10],
         'tags': t.get('tags', []),
     } for t in topics_raw[:limit]]
 
@@ -301,7 +309,7 @@ def search_swift_forums(query: str, category: Optional[str] = None, limit: int =
             'blurb': p.get('blurb', ''),
             'username': p.get('username', ''),
             'like_count': p.get('like_count', 0),
-            'created_at': p.get('created_at', '')[:10],
+            'created_at': (p.get('created_at') or '')[:10],
             'topic_id': p.get('topic_id'),
             'post_url': f"https://forums.swift.org/t/{p.get('topic_id')}/{post_number}",
         }
@@ -319,7 +327,7 @@ def search_swift_forums(query: str, category: Optional[str] = None, limit: int =
         'query': query,
         'category': category,
         'search_scope': 'one upstream search page; counts are not global totals',
-        'more_available': bool(data.get('grouped_search_result', {}).get('more_full_page_results') or data.get('grouped_search_result', {}).get('more_posts')),
+        'more_available': bool(grouped.get('more_full_page_results') or grouped.get('more_posts')),
         'truncated': len(topics_raw) > limit or len(posts_raw) > limit,
         'total_topics': len(topics_raw),
         'total_posts': len(posts_raw),

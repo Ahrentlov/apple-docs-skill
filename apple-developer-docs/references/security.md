@@ -32,9 +32,10 @@ single-threaded CLI, not embedding inside a multithreaded application.
 - The supervisor applies the configured wall deadline (10 seconds by default,
   1–300 seconds allowed), including blocking API requests. Process shutdown may
   add a short cleanup interval.
-- Query CPU time is limited to the configured timeout. A 50 MiB `RLIMIT_AS` is
-  attempted, but may be unavailable or ineffective on macOS. This limit does
-  not constrain API-worker memory. Resource limits are not a general DoS guarantee.
+- Query CPU time is limited to the configured timeout; exhaustion is reported as
+  `TimeoutError`. A 50 MiB `RLIMIT_AS` applies on Linux; macOS refuses to lower
+  memory limits, so query memory is unbounded there. Neither limit constrains
+  API-worker memory. Resource limits are not a general DoS guarantee.
 - Code is limited to 10,000 characters, captured prints to 64 KiB, serialized
   query output to 1 MiB, and individual IPC messages to 8 MiB. Oversized or
   unserializable output fails explicitly rather than being silently cut off.
@@ -54,7 +55,8 @@ single-threaded CLI, not embedding inside a multithreaded application.
 ## External content
 
 Fetched documents and search metadata are third-party data. Text-bearing API
-results include `content_notice`; GitHub file and WWDC note bodies also carry
+results include `content_notice`; Apple page, tutorial, WWDC transcript, GitHub file,
+and WWDC note bodies also carry
 `BEGIN EXTERNAL CONTENT` / `END EXTERNAL CONTENT` markers. An exact end-marker
 inside fetched text is neutralized. Markers provide context, not sanitization
 or a prompt-injection guarantee. Treat community forum posts and WWDC notes as

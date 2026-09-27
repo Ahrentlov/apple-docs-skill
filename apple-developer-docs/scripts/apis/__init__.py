@@ -6,10 +6,12 @@ Standalone implementations for use in the sandbox.
 These make direct HTTP calls - no external dependencies.
 """
 
-from .apple_docs import search_symbols, fetch_documentation, search_apple_online_urls, get_framework_info
+from .apple_docs import fetch_documentation, check_availability, search_apple_online_urls, get_framework_info
+from .symbol_index import search_symbols
+from .tutorials import list_tutorials
 from .swift_evolution import search_proposals, get_proposal, search_swift_forums_urls, search_swift_forums
 from .swift_repos import search_swift_repos_urls, fetch_github_file, compare_github_file
-from .wwdc_notes import search_wwdc_sessions, fetch_wwdc_session
+from .wwdc import search_wwdc_sessions, fetch_wwdc_session, fetch_wwdc_transcript
 from .hig import search_hig, fetch_hig
 from .archive import (
     search_archive, list_archive_frameworks, list_archive_topics,
@@ -24,6 +26,8 @@ from .xcode_releases import list_xcode_release_notes, get_xcode_release_notes_ur
 __all__ = [
     'fetch_documentation',
     'search_symbols',
+    'check_availability',
+    'list_tutorials',
     'compare_github_file',
     'search_apple_online_urls',
     'get_framework_info',
@@ -35,6 +39,7 @@ __all__ = [
     'fetch_github_file',
     'search_wwdc_sessions',
     'fetch_wwdc_session',
+    'fetch_wwdc_transcript',
     'search_hig',
     'fetch_hig',
     'search_archive',

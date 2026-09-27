@@ -134,7 +134,7 @@ Search Swift Forums and return actual topics + posts (not just URLs).
 }
 ```
 
-**Errors:** `fetch_failed`.
+**Errors:** `invalid_input` (blank query), `upstream_rejected` (Discourse refused the query, e.g. too short), `invalid_schema`, `fetch_failed`.
 
 All proposal metadata and forum text results carry `content_notice`. Search summaries
 and forum blurbs are excerpts, not full documents. A zero-result metadata search

@@ -38,11 +38,13 @@ remain on `main`.
 
 ---
 
-## search_compiler_docs_text(query: str, limit: int = 10, max_files: int = 60, ref: str = "main") -> Dict
+## search_compiler_docs_text(query: str, limit: int = 10, max_files: int = 500, ref: str = "main") -> Dict
 
 Full-text search inside `.md`, `.rst`, and `.txt` compiler docs. Matching paths
 are prioritized but do not exclude other files. Fetches batches of up to eight,
-within `max_files` (default 60, capped at 500), matching ALL terms on the same line.
+within `max_files` (default and cap 500, which covers every docs file), matching ALL
+terms on the same line. Searching stops once `limit` hits are found; a full pass
+takes a few seconds and reads files without using GitHub API quota.
 The docs subtree is fetched separately so repository-wide tree truncation cannot
 silently drop documentation.
 
@@ -80,8 +82,9 @@ term, independently of body matches and the file budget. Use these fields for
 path-specific scope claims rather than inferring them from a zero-hit result.
 
 `matches_returned` counts returned hits, not all matches. `truncated` also covers
-failed fetches, partially read files, and omitted hits, not just the file budget. Raise
-`max_files` up to 500 and/or `limit` up to 200 where useful, and inspect
+failed fetches, partially read files, and omitted hits, not just the file budget. Pass
+a smaller `max_files` only for a quick path-prioritized scan; raise `limit` up to 200
+for more hits, and inspect
 `failed_files` and `truncated_files`; raising the file budget does not repair a
 failed fetch or expand the per-file byte budget. Files up to 1 MiB are searched
 fully. For larger files, complete lines in the first 1 MiB remain searchable;

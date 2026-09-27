@@ -3,7 +3,8 @@ Sandboxed Python Execution Environment
 ======================================
 
 Executes user-provided Python code in an isolated subprocess with:
-- Resource limits (CPU time, memory)
+- Resource limits: CPU time everywhere; a 50 MiB address-space limit where the
+  OS allows lowering it (Linux; macOS refuses, so memory is unbounded there)
 - Restricted builtins
 - Dynamic API calls via IPC (stdin/stdout)
 - No file or network builtins exposed to generated code
@@ -79,9 +80,14 @@ import json
 import sys
 import resource
 
-# Set resource limits (Unix only)
+# Apply each limit independently so an unsupported one cannot mask the other.
+# macOS refuses to lower RLIMIT_AS; the supervisor's wall deadline still applies.
 try:
-    resource.setrlimit(resource.RLIMIT_CPU, ({timeout}, {timeout}))
+    # Soft < hard, so exhaustion delivers a distinct SIGXCPU before any SIGKILL.
+    resource.setrlimit(resource.RLIMIT_CPU, ({timeout}, {timeout} + 1))
+except (ValueError, resource.error):
+    pass
+try:
     memory_bytes = {max_memory_mb} * 1024 * 1024
     resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
 except (ValueError, resource.error):
@@ -159,7 +165,7 @@ try:
 except Exception as e:
     output = {{
         "success": False,
-        "error": str(e),
+        "error": str(e) or type(e).__name__,  # e.g. MemoryError carries no message
         "error_type": type(e).__name__,
         "stdout": "".join(user_output)
     }}
@@ -361,15 +367,11 @@ sys.stdout.flush()
 
             self._worker_sender.send_bytes(f"pid:{proc.pid}".encode())
 
-            # Process IPC until completion or timeout
-            deadline = time.time() + self.timeout
+            # Relay IPC until completion. The wall deadline is owned by _supervise, which kills
+            # this worker and the code process; readline() here may block until then.
             result_line = None
 
             while True:
-                if time.time() > deadline:
-                    proc.kill()
-                    raise subprocess.TimeoutExpired(cmd=script_path, timeout=self.timeout)
-
                 line = proc.stdout.readline(MAX_IPC_BYTES + 1)
                 if not line:
                     break
@@ -407,6 +409,15 @@ sys.stdout.flush()
             stderr = proc.stderr.read()
 
             # Parse final result
+            if result_line is None and proc.returncode == -signal.SIGXCPU:
+                return ExecutionResult(
+                    success=False,
+                    stdout="\n".join(collected_output),
+                    stderr=stderr,
+                    error=f"CPU time limit of {self.timeout} seconds exceeded",
+                    error_type="TimeoutError",
+                    api_calls_made=api_calls_made
+                )
             if result_line is None:
                 return ExecutionResult(
                     success=False,
